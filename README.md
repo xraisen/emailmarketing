@@ -1,356 +1,129 @@
-# $0 Cost Auto Email Sender
+# AI-Powered Sales Assistant - Google Apps Script Project
 
-## Overview
+## 1. Project Overview
 
-The $0 Cost Auto Email Sender is a Google Apps Script-based system designed to automate email outreach, follow-ups, reply processing, and lead management. It leverages a suite of Google services (Sheets, Gmail, Apps Script, Calendar), the Gemini API for AI-powered email personalization, and Calendly for appointment booking.
+This Google Apps Script project automates and enhances email outreach and follow-up processes for sales prospecting. It leverages the Gemini AI to understand prospect replies, generate context-aware responses, and manage lead progression through various engagement stages. The system aims to act as an intelligent assistant, handling initial outreach, processing replies with nuanced understanding, and flagging leads that require manual attention.
 
-**Key Features:**
+## 2. Key Features
 
-*   **AI-Generated Personalized Emails:** Utilizes the Gemini API to craft unique initial and follow-up emails for each lead.
-*   **Scheduled & Automated Sending:** Emails and follow-ups are sent out on a predefined schedule.
-*   **Automated Lead Status Updates:** Lead statuses are automatically updated in a Google Sheet based on email sends, replies, and bookings.
-*   **Reply Processing:** Intelligently processes incoming email replies to identify positive interest, disinterest, or neutral responses.
-*   **PR Alerts:** Sends real-time notifications via Email and Slack (if configured) for important lead events (positive replies, new bookings).
-*   **Calendly Integration:** Seamlessly integrates with Calendly webhooks to track when leads book appointments (`invitee.created`) and when they cancel (`invitee.canceled`).
-*   **Google Calendar Event Creation:** Automatically creates Google Calendar events for confirmed bookings, inviting the lead.
-*   **Comprehensive Logging:** Keeps detailed logs of all actions, including `invitee.canceled` events, in a dedicated Google Sheet.
+*   **AI-Driven Reply Processing**: Uses Gemini to classify prospect replies, identifying interested services, key concerns, sentiment, and AI's confidence in the classification.
+*   **Contextual AI Follow-Ups**: Generates personalized follow-up emails based on the AI's understanding of the prospect's reply and past interaction history.
+*   **Interaction Memory**: Maintains a history of interactions (from logs and Gmail threads) to provide context to the AI for more coherent and relevant communication.
+*   **Manual Review Workflow**: Flags leads for manual review (`NEEDS_MANUAL_REVIEW` status) based on low AI confidence, negative/neutral sentiment for generic inquiries, or AI failures, with email notifications to admin.
+*   **Automated Initial Outreach**: Sends initial cold emails via `dailyEmailBatch`.
+*   **Automated Generic Follow-Ups**: Sends timed follow-up emails if no reply is received after initial outreach.
+*   **Standardized Plain Text Emails**: Ensures all emails are well-formatted plain text for readability and professionalism.
+*   **Lead Management**: Tracks lead statuses (Pending, Sent, Hot, Unqualified, Booked, Abandoned, Needs Manual Review) in a Google Sheet.
+*   **Logging**: Comprehensive logging of actions, AI interactions, and errors to a dedicated Google Sheet.
+*   **Testing Framework**: Includes a suite of unit and integration tests for key functionalities.
 
-**$0 Cost Aspect:**
+## 3. File Structure Overview
 
-This system is designed to operate with no direct software costs by utilizing the free tiers of:
-*   Google Apps Script (generous free quotas)
-*   Gmail (standard account sending limits apply)
-*   Google Sheets
-*   Google Calendar
-*   Gemini API (free tier typically available, subject to Google's terms and quotas)
-*   Calendly (free tier allows for webhook integration)
-*   Slack (free tier allows for Incoming Webhooks, if used)
+*   **`Config.js`**: Central configuration file for all settings (Spreadsheet ID, API Keys, Calendly links, service profiles, email footer, status definitions, etc.). **User MUST update this file.**
+*   **`Utilities.js`**: Contains helper functions for tasks like data retrieval from sheets, string manipulation (truncation, formatting), interaction history generation, and a fallback logger.
+*   **`prompt.js`**: Defines functions that generate the detailed instructional prompts for the Gemini AI for various tasks (classification, email generation). Includes plain text formatting standards.
+*   **`automated_email_sender.js`**: Houses the core logic for AI interactions (`getAIEmailContent`, `classifyProspectReply`, `generateAIContextualFollowUp`), email sending (`sendEmail`), initial outreach (`dailyEmailBatch`), and reply processing (`processReplies`).
+*   **`automated_email_followup.js`**: Manages the sending of generic follow-up emails (`followUpEmails`) and lead cleanup (`cleanupLeads`).
+*   **`automated_calendly.js`**: (Assumed from project context, may not be directly modified by this AI) Handles Calendly webhook events to update lead statuses to 'BOOKED'.
+*   **`TestFramework.js`**: Contains the testing infrastructure, mock objects, and all test functions for the project.
+*   **`appsscript.json`**: The Apps Script manifest file, defining project properties, scopes, and triggers.
+*   **`README.md`**: This file - project documentation.
 
-## What Will Happen After Setup (Workflow Description)
+## 4. Setup Instructions
 
-Once the system is fully set up and operational, here’s a detailed walkthrough of the automated workflow:
+### 4.1. Copying the Project
+1.  Make a copy of this Google Apps Script project.
+2.  Open the copied project.
 
-**1. Initial Setup & Triggers:**
+### 4.2. Configuration (`Config.js`)
+Open the `Config.js` file and **update the following constants** with your specific information:
+*   `CONFIG.SPREADSHEET_ID`: The ID of your Google Sheet where lead and log data will be stored.
+*   `CONFIG.GEMINI_API_KEY`: Your API key for the Gemini AI model.
+*   `CONFIG.CALENDLY_LINK`: Your default Calendly booking link.
+*   `CONFIG.PR_EMAIL`: The email address for receiving important notifications (e.g., for leads needing manual review, PR alerts).
+*   `CONFIG.AI_SERVICES_PROFILE`: Review and update the service definitions, keywords, descriptions, and specific Calendly links to match your offerings.
+*   *(Optional)* `CONFIG.SLACK_WEBHOOK_URL`: If you want Slack notifications.
+*   *(Optional but Recommended for Calendly Integration)* `CONFIG.CALENDLY_SIGNING_KEY`, `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN`, `CONFIG.ORGANIZATION_URI`.
+*   Other settings like `USER_TIMEZONE`, `DAILY_EMAIL_QUOTA` can be reviewed and adjusted as needed.
 
-*   **Sheets Created:** Upon running `initializeSheets()`, two sheets, 'Leads' and 'Logs', are created in your specified Google Spreadsheet.
-    *   The 'Leads' sheet will have headers: `First Name`, `Email`, `Phone`, `Last Service`, `Status`, `Last Contact`, `Lead ID`. The header row will be frozen.
-    *   The 'Logs' sheet will have headers: `Timestamp`, `Action`, `Lead ID`, `Email`, `Details`, `Status`. The header row will be frozen.
-    *   Example Log entries:
-        ```
-        [Timestamp], InitializeSheets, , , Starting sheet initialization., INFO
-        [Timestamp], InitializeSheets, , , Created sheet: Leads, INFO
-        [Timestamp], SetHeaders, , , Headers set for sheet: Leads, INFO  // This log implies headers written and row frozen
-        [Timestamp], InitializeSheets, , , Created sheet: Logs, INFO
-        [Timestamp], SetHeaders, , , Headers set for sheet: Logs, INFO // This log implies headers written and row frozen
-        [Timestamp], InitializeSheets, , , Sheet initialization completed successfully., INFO
-        ```
-*   **Triggers Established:** Running `setupTriggers()` configures automated functions based on your `CONFIG.USER_TIMEZONE`:
-    *   `dailyEmailBatch`: Runs daily (e.g., 9 AM) to send initial emails.
-    *   `followUpEmails`: Runs daily (e.g., 3 PM) to send follow-ups.
-    *   `processReplies`: Runs hourly to check for and process new email replies.
-    *   `cleanupLeads`: Runs daily (e.g., 11 PM) to mark old, unresponsive leads as 'ABANDONED'.
-    *   Example Log entries:
-        ```
-        [Timestamp], SetupTriggersStart, , , Setting up script triggers., INFO
-        [Timestamp], SetupTriggersDeleted, , , Deleted 0 existing trigger(s)., INFO // Or count of deleted
-        [Timestamp], SetupTriggersCreate, , , Created trigger for dailyEmailBatch at 9 AM., SUCCESS
-        [Timestamp], SetupTriggersCreate, , , Created trigger for followUpEmails at 3 PM., SUCCESS
-        [Timestamp], SetupTriggersCreate, , , Created trigger for cleanupLeads at 11 PM., SUCCESS
-        [Timestamp], SetupTriggersCreate, , , Created trigger for processReplies every hour., SUCCESS
-        [Timestamp], SetupTriggersEnd, , , Script trigger setup complete., INFO
-        ```
+### 4.3. Google Sheet Setup
+1.  Create a new Google Spreadsheet (or use an existing one) and note its ID for `Config.js`.
+2.  **Create two sheets** within this spreadsheet with the exact names:
+    *   `Leads` (as defined in `LEADS_SHEET_NAME` in `Config.js`)
+    *   `Logs` (as defined in `LOGS_SHEET_NAME` in `Config.js`)
+3.  **Essential Columns for "Leads" sheet**:
+    *   `Lead ID` (Text)
+    *   `First Name` (Text)
+    *   `Email` (Text)
+    *   `Last Service` (Text - e.g., the service initially pitched)
+    *   `Status` (Text - will be populated by the script, e.g., PENDING, SENT, HOT)
+    *   `Last Contact` (Date/Time - updated by script)
+    *   `Phone` (Text - optional, used in PR alerts)
+    *   *(Other columns can be added as needed for your own tracking)*
+4.  **Essential Columns for "Logs" sheet**:
+    *   `Timestamp` (Date/Time)
+    *   `Action` (Text - e.g., DailyBatchStart, SendEmailSuccess, ProcessRepliesAIFollowUp)
+    *   `Lead ID` (Text)
+    *   `Email` (Text)
+    *   `Details` (Text - details of the action or error message)
+    *   `Status` (Text - e.g., SUCCESS, ERROR, INFO, WARNING)
 
-**2. Lead Processing Workflow:**
+### 4.4. Apps Script Project Setup
+1.  **Services**: Ensure the following Google services are enabled (usually by default): Gmail, Sheets, UrlFetch, LockService, Script.
+2.  **Permissions (Scopes)**: When you first run a function that requires authorization (e.g., sending an email), Google will prompt you to authorize the script. Review the requested permissions. Key scopes used include:
+    *   `https://www.googleapis.com/auth/script.external_request` (for UrlFetch to call Gemini API)
+    *   `https://www.googleapis.com/auth/spreadsheets` (to read/write to your Google Sheet)
+    *   `https://www.googleapis.com/auth/gmail.send` (to send emails)
+    *   `https://www.googleapis.com/auth/gmail.readonly` (to read replies)
+    *   `https://www.googleapis.com/auth/script.send_mail` (potentially for error notifications if `MailApp` is used, though `GmailApp` is primary for prospect emails)
+    *   `https://www.googleapis.com/auth/script.scriptapp` (for triggers, webhooks if used for Calendly)
+    *   `https://www.googleapis.com/auth/script.storage` (if script properties are used)
+    *   `https://www.googleapis.com/auth/script.container.ui` (if a UI is ever added)
 
-*   **Adding Leads:** You manually add new leads to the 'Leads' sheet with their `First Name`, `Email`, `Phone` (optional), and `Last Service`. Set their initial `Status` to `PENDING`.
-*   **Daily Email Batch (`dailyEmailBatch`):**
-    *   The system scans for leads with `Status = PENDING`.
-    *   For each, it generates a unique, personalized email using the Gemini API and the `getInitialEmailPrompt`.
-    *   The email is sent via Gmail.
-    *   `Status` is updated to `SENT`, `Last Contact` date is set. A `Lead ID` is generated if missing.
-    *   Example Log entries:
-        ```
-        [Timestamp], DailyBatchStart, , , Daily email batch process started with lock., INFO
-        [Timestamp], DailyBatchLeadIDGenerated, [GeneratedLeadID], lead@example.com, Generated new Lead ID., INFO
-        [Timestamp], GetAIEmailContent, , , Successfully retrieved AI content., SUCCESS
-        [Timestamp], SendEmailSuccess, [GeneratedLeadID], lead@example.com, Subject: Free Audit for [Last Service], SUCCESS
-        [Timestamp], DailyBatchEmailSent, [GeneratedLeadID], lead@example.com, Initial email sent. Subject: Free Audit for [Last Service], SUCCESS
-        [Timestamp], DailyBatchEnd, , , Daily email batch process finished. Emails sent in this run: 1, INFO
-        [Timestamp], DailyBatchLockReleased, , , Lock released for dailyEmailBatch., DEBUG
-        ```
-*   **Hourly Reply Processing (`processReplies`):**
-    *   The system checks your Gmail inbox for unread replies from leads.
-    *   **Positive Reply** (e.g., contains "yes", "interested"):
-        *   Lead `Status` changes to `HOT`.
-        *   An email is sent to the lead with your `CONFIG.CALENDLY_LINK`.
-        *   A PR alert is sent via Email (to `CONFIG.PR_EMAIL`) and Slack (if `CONFIG.SLACK_WEBHOOK_URL` is configured). The time in this alert will be 'Pending'.
-        *   Example Log entries:
-            ```
-            [Timestamp], ProcessRepliesStart, , , Hourly reply processing started with lock., INFO
-            [Timestamp], ProcessRepliesProcessing, [LeadID], lead@example.com, Processing reply. Subject: Re: Free Audit, DEBUG
-            [Timestamp], SendEmailSuccess, [LeadID], lead@example.com, Subject: Next Step: Book Your Free Audit for [Last Service], SUCCESS
-            [Timestamp], PR_ALERT_EMAIL_SUCCESS, [LeadID], lead@example.com, PR Email alert sent. Subject: NEW CALL - [FirstName], SUCCESS
-            [Timestamp], PR_ALERT_SLACK_SUCCESS, [LeadID], lead@example.com, PR Slack alert sent., SUCCESS
-            [Timestamp], ProcessRepliesHotLead, [LeadID], lead@example.com, Lead marked HOT. Calendly link sent. PR alert triggered., SUCCESS
-            [Timestamp], ProcessRepliesEnd, , , Hourly reply processing finished., INFO
-            [Timestamp], ProcessRepliesLockReleased, , , Lock released for processReplies., DEBUG
-            ```
-    *   **Negative Reply** (e.g., "no", "stop", "unsubscribe", "not interested"):
-        *   Lead `Status` changes to `UNQUALIFIED`.
-        *   Example Log entry:
-            ```
-            [Timestamp], ProcessRepliesUnqualified, [LeadID], lead@example.com, Lead marked UNQUALIFIED., SUCCESS
-            ```
-    *   **Neutral/Other Reply:**
-        *   The reply is logged. No status change by default (manual review may be needed).
-        *   Example Log entry:
-            ```
-            [Timestamp], ProcessRepliesNeutral, [LeadID], lead@example.com, Neutral reply received, requires manual review. Status not changed., INFO
-            ```
-*   **Follow-Up Emails (`followUpEmails`):**
-    *   If a lead has `Status = SENT` and `Last Contact` was >= 3 days ago:
-        *   A personalized follow-up email is generated by Gemini API (`getFollowUpEmailPrompt`).
-        *   Email is sent. `Status` becomes `FOLLOW_UP_1`, `Last Contact` is updated.
-        *   Example Log entries:
-            ```
-            [Timestamp], FollowUpBatchStart, , , Follow-up email batch process started with lock., INFO
-            [Timestamp], GetAIEmailContent, , , Successfully retrieved AI content., SUCCESS
-            [Timestamp], SendEmailSuccess, [LeadID], lead@example.com, Subject: Following up on your Free Audit for [Last Service], SUCCESS
-            [Timestamp], FollowUpEmailSent, [LeadID], lead@example.com, Follow-up email sent. Subject: Following up on your Free Audit for [Last Service], SUCCESS
-            [Timestamp], FollowUpBatchEnd, , , Follow-up email batch process finished..., INFO
-            [Timestamp], FollowUpLockReleased, , , Lock released for followUpEmails., DEBUG
-            ```
-*   **Lead Cleanup (`cleanupLeads`):**
-    *   If a lead has `Status = FOLLOW_UP_1` and `Last Contact` was >= 4 days ago:
-        *   `Status` changes to `ABANDONED`.
-        *   Example Log entries:
-            ```
-            [Timestamp], CleanupLeadsStart, , , Cleanup leads process started with lock., INFO
-            [Timestamp], CleanupLeadAbandoned, [LeadID], lead@example.com, Lead status changed to ABANDONED., SUCCESS
-            [Timestamp], CleanupLeadsEnd, , , Cleanup leads process finished..., INFO
-            [Timestamp], CleanupLeadsLockReleased, , , Lock released for cleanupLeads., DEBUG
-            ```
+### 4.5. Triggers
+Set up time-driven triggers for the main automation functions:
+1.  Go to "Triggers" (clock icon) in the Apps Script editor.
+2.  Click "Add Trigger".
+3.  For `dailyEmailBatch`: Choose event source "Time-driven", select a time of day (e.g., every morning).
+4.  For `processReplies`: Choose event source "Time-driven", select a frequency (e.g., every hour or every 15 minutes).
+5.  For `followUpEmails` (and `cleanupLeads` if separate): Choose event source "Time-driven", select a frequency (e.g., daily).
 
-**3. Calendly Webhook & Google Calendar Event Creation:**
+## 5. How to Run Tests
+1.  Open `TestFramework.js` in the Apps Script editor.
+2.  Select the function `masterTestRunner` (or `runAllTests`) from the function dropdown menu at the top.
+3.  Click the "Run" button (play icon).
+4.  View logs (`Ctrl+Enter` or `Cmd+Enter`) to see test results (PASS/FAIL messages).
 
-*   **When a lead books a call (`invitee.created` event):**
-    *   Calendly sends a webhook notification to your deployed Google Apps Script Web App.
-    *   The `doPost(e)` function in `automated_calendly.js` processes this:
-        *   It verifies the event is `invitee.created`.
-        *   It finds the lead in the 'Leads' sheet by matching the email from the Calendly notification.
-        *   The lead's `Status` is updated to `BOOKED`.
-        *   The lead's `Last Contact` is updated to the booking start time.
-        *   A PR alert is sent via Email and Slack. The time in this alert will be the actual booking time, formatted according to `CONFIG.USER_TIMEZONE` (e.g., `2024-07-15 14:00 EDT`). If `CONFIG.USER_TIMEZONE` is not set, it defaults to UTC (ISO format).
-        *   A Google Calendar event is created for the booked time (30-minute duration).
-            *   **Event Title:** `Free Audit with [Lead Name] ([Last Service])` (Lead Name from Calendly, Last Service from sheet)
-            *   **Attendees:** The lead's email is added as a guest, and they receive a calendar invitation.
-            *   **Description:** Includes:
-                ```
-                Contact: [Lead's Email] | [Lead's Phone (if available in sheet)]
-                Service: [Last Service from sheet]
-                Lead ID: [Lead's ID from sheet]
-                ```
-    *   Example Log entries for `invitee.created`:
-        ```
-        [Timestamp], CalendlyWebhookReceived, , , Received POST request on Calendly webhook with lock., INFO
-        [Timestamp], CalendlyPayload, , [lead_email_from_payload], Payload parsed. Event type: invitee.created..., DEBUG
-        [Timestamp], CalendlyLeadBooked, [LeadID], [lead_email_from_payload], Lead status updated to BOOKED. Booking time: [ISO Booking Time], SUCCESS
-        [Timestamp], PR_ALERT_EMAIL_SUCCESS, [LeadID], [lead_email_from_payload], PR Email alert sent. Subject: NEW CALL - [FirstNameFromSheet], SUCCESS
-        [Timestamp], PR_ALERT_SLACK_SUCCESS, [LeadID], [lead_email_from_payload], PR Slack alert sent., SUCCESS
-        [Timestamp], CALENDAR_EVENT_SUCCESS, [LeadID], [lead_email_from_payload], Created calendar event. ID: [CalendarEventID], SUCCESS
-        [Timestamp], CalendlyWebhookLockReleased, , , Lock released for Calendly doPost., DEBUG
-        ```
-*   **When a lead cancels a call (`invitee.canceled` event):**
-    *   Calendly sends an `invitee.canceled` webhook notification.
-    *   The `doPost(e)` function logs this event:
-        *   Example Log entry:
-            ```
-            [Timestamp], CalendlyInviteeCanceled, [CalendlyEventUUID], lead_who_canceled@example.com, Received "invitee.canceled" event. Full payload: {...}, INFO
-            ```
-        *   Currently, no further automated action (like deleting the calendar event or changing lead status) is taken for cancellations, but the information is logged for manual review and potential future enhancements.
+## 6. Core Workflows
 
-**4. System Outcomes:**
+### 6.1. Initial Email Outreach (`dailyEmailBatch`)
+- Runs on a daily trigger.
+- Fetches leads with "PENDING" status from the "Leads" sheet.
+- Generates a concise, AI-written cold email using `getInitialEmailPrompt`.
+- Sends the email via `GmailApp`.
+- Updates lead status to "SENT" and logs the action.
 
-*   **Lead Progression:** Leads automatically move through various statuses in your 'Leads' sheet.
-*   **Automation:** Initial emails, follow-up sequences, and initial reply sorting are handled automatically.
-*   **Notifications:** Your team is kept informed of positive lead interactions and new bookings.
-*   **Centralized Logging:** All system actions, successes, errors, and notable events like cancellations are meticulously recorded in the 'Logs' sheet.
+### 6.2. Reply Processing (`processReplies`)
+- Runs on a frequent trigger (e.g., hourly).
+- Fetches unread emails.
+- Matches sender to leads in the "Leads" sheet (status "SENT" or "FOLLOW_UP_1").
+- Handles opt-outs ("stop", "unsubscribe").
+- Retrieves interaction history using `getLeadInteractionHistory`.
+- Uses `classifyProspectReply` (Gemini AI) to analyze reply content for service interest, key concerns, sentiment, and AI confidence.
+- Based on AI classification:
+    - **Negative Sentiment**: Marks lead "UNQUALIFIED".
+    - **Low Confidence / Generic / AI Failure**: Marks lead "NEEDS_MANUAL_REVIEW" and sends an admin notification.
+    - **Positive/Neutral Specific Interest (Good Confidence)**:
+        - Generates a contextual follow-up email using `generateAIContextualFollowUp`.
+        - Sends the AI-generated email with appropriate Calendly link.
+        - Marks lead "HOT" and sends an admin PR alert.
+- Logs all actions and AI interactions.
 
-## Setup Requirements & Instructions
-
-Follow these steps carefully to set up your $0 Cost Auto Email Sender.
-
-**A. Prerequisites:**
-
-*   **Google Account:** A standard Google account (e.g., @gmail.com or a Google Workspace account).
-*   **Calendly Account:** A free Calendly account is sufficient.
-*   **Gemini API Key:**
-    *   Obtain from [Google AI Studio](https://aistudio.google.com/app/apikey) or Google Cloud Console.
-    *   Be mindful of its usage limits and Google's terms.
-*   **Slack Workspace (Optional):** If you want Slack PR alerts.
-
-**B. Script Installation:**
-
-1.  **Create Google Apps Script Project:**
-    *   Go to [script.google.com](https://script.google.com) and click "New project".
-    *   Rename the project (e.g., "$0 Cost Auto Email Sender").
-2.  **Copy Script Files:**
-    *   Delete the default `Code.gs` file.
-    *   Create a new script file for each `.js` file provided with this system, ensuring filenames match exactly:
-        *   `Config.js`, `Setup.js`, `Utilities.js`, `prompt.js`, `automated_email_sender.js`, `automated_email_followup.js`, `automated_email_sendPRAlert.js`, `automated_calendly.js`.
-    *   Copy the entire content of each provided `.js` file into the corresponding file in your Apps Script project.
-
-**C. Configuration (`Config.js`):**
-
-Open `Config.js`. You **must** update these placeholders:
-
-*   `CONFIG.GEMINI_API_KEY`: Your Gemini API Key.
-*   `CONFIG.CALENDLY_LINK`: Your public Calendly booking page link.
-*   `CONFIG.PR_EMAIL`: Email address for PR/notification alerts.
-*   `CONFIG.USER_TIMEZONE`: Your IANA timezone string (e.g., `America/New_York`). Find a list [here](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
-*   `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN`: Your Calendly Personal Access Token.
-    *   To get this: Log in to Calendly > Integrations > API & Webhooks > Generate Token. Copy it immediately.
-
-The following `CONFIG` values are also important:
-
-*   `CONFIG.ORGANIZATION_URI`: Initially a placeholder (`'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME'`). This will be filled in Step E.4.
-*   `CONFIG.SPREADSHEET_ID`: **Action:** Create a new Google Sheet. Copy its ID from the URL and paste it here.
-*   `CONFIG.SLACK_WEBHOOK_URL` (Optional): Your Slack Incoming Webhook URL, or leave as placeholder/empty if not using Slack.
-*   `CONFIG.CALENDLY_SIGNING_KEY`: Pre-filled. Used for logging Calendly signature information. For strict verification, you'd update this with a key Calendly provides for a specific webhook subscription.
-
-**D. Authorizations:**
-
-When you first run functions, Apps Script will prompt for authorization.
-*   Click "Review Permissions".
-*   Choose your Google account.
-*   If you see "Google hasn’t verified this app", click "Advanced", then "Go to [Your Project Name] (unsafe)".
-*   Grant the necessary permissions.
-
-**E. Initial Setup Functions (Run Manually from Apps Script Editor):**
-
-**Important:** The following setup functions *must* be run manually from the Apps Script editor in the specified order. These steps are crucial for configuring the system. The 'autonomous operation' of this system refers to the automated email sending, reply processing, and lead updates that occur *after* this initial manual setup is successfully completed.
-
-Run these functions from `Setup.js` in the specified order:
-1.  **Update `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN`:** Open `Config.js` and paste your actual Calendly Personal Access Token into the `CALENDLY_PERSONAL_ACCESS_TOKEN` field. Save the file.
-2.  **Run `initializeSheets()`:**
-    *   Select `initializeSheets` from the function dropdown. Click "Run".
-    *   Verify 'Leads' and 'Logs' sheets are created in your Google Sheet.
-3.  **Run `getCalendlyOrganizationUri()`:**
-    *   Select `getCalendlyOrganizationUri` from the function dropdown. Click "Run".
-    *   The Organization URI will be displayed in the Apps Script execution log (View > Logs). **Copy this URI from the logs.**
-4.  **Update `CONFIG.ORGANIZATION_URI`:** Open `Config.js` and paste the copied Organization URI into the `ORGANIZATION_URI` field. Save the file.
-5.  **Run `setupTriggers()`:**
-    *   Select `setupTriggers` from the function dropdown. Click "Run".
-    *   Verify triggers are created in the "Triggers" section of Apps Script.
-
-**F. Deploy Web App (for Calendly Webhook):**
-
-1.  Click "Deploy" -> "New deployment".
-2.  Gear icon -> "Web app".
-3.  **Description:** (e.g., "Calendly Webhook for Auto Email Sender").
-4.  **Execute as:** "Me ([your email address])".
-5.  **Who has access:** "Anyone".
-6.  Click "Deploy". Copy the **Web app URL**.
-
-**G. Setup Calendly Webhook**
-
-1. Ensure your Apps Script project is deployed as a Web App (see Section F, "Deploy Web App (for Calendly Webhook)").
-2. In the Apps Script editor, select the `createCalendlyWebhookSubscription` function from `Setup.js` using the function dropdown menu.
-3. Click the "Run" button (it looks like a play icon). This function will automatically attempt to use your currently deployed Web App URL to create the webhook subscription with Calendly for the `invitee.created` and `invitee.canceled` events.
-4. Check the execution logs (View > Logs) for a success message. A "201 Created" response indicates a new webhook was made. A "409 Conflict" response indicates the webhook already exists for your Web App URL, which is also considered a success by the function.
-5. **Important**: Verify the webhook is correctly listed in your Calendly account under "Integrations" > "API & Webhooks" (or similar section) and is pointing to the correct Web App URL.
-
-## Example Scenario
-
-Here's how the system might work for a single lead:
-
-*   **Day 0:** You add "Laura Chen" (`laura.chen@example.com`, last service: "Website Design") to the 'Leads' sheet with `Status = PENDING`.
-
-*   **Day 1, 9:00 AM (Trigger: `dailyEmailBatch`):**
-    *   System picks up Laura Chen.
-    *   Gemini API generates a personalized email.
-    *   Email sent. Laura's `Status` -> `SENT`. `Last Contact` updated.
-    *   Log: `DailyBatchEmailSent, [Laura's LeadID], laura.chen@example.com, Initial email sent.`
-
-*   **Day 1, 10:30 AM (Laura replies "Yes, sounds interesting! Tell me more."):**
-    *   **11:00 AM (Trigger: `processReplies`):**
-        *   System detects Laura's unread reply.
-        *   Laura's `Status` -> `HOT`. `Last Contact` updated.
-        *   Email sent to Laura: "Great to hear, Laura! You can book your free consultation here: [Your Calendly Link]".
-        *   PR Alert Email & Slack sent: "NEW CALL - Laura Chen... Time: Pending".
-        *   Log: `ProcessRepliesHotLead, [Laura's LeadID], laura.chen@example.com, Lead marked HOT...`
-
-*   **Day 1, 2:00 PM (Laura clicks Calendly link, books for Day 3, 10:00 AM):**
-    *   **2:00 PM (Calendly Webhook for `invitee.created` -> `doPost(e)`):**
-        *   System receives webhook. Laura's `Status` -> `BOOKED`. `Last Contact` updated.
-        *   PR Alert Email & Slack sent: "NEW CALL - Laura Chen... Time: [Day 3, 10:00 AM Formatted]".
-        *   Google Calendar event created for Day 3, 10:00 AM - 10:30 AM, inviting Laura.
-        *   Log: `CalendlyLeadBooked, [Laura's LeadID], laura.chen@example.com, Lead status updated to BOOKED...`
-        *   Log: `CALENDAR_EVENT_SUCCESS, [Laura's LeadID], laura.chen@example.com, Created calendar event...`
-
-*   **Day 2, 5:00 PM (Laura cancels her Day 3 appointment via Calendly):**
-    *   **5:00 PM (Calendly Webhook for `invitee.canceled` -> `doPost(e)`):**
-        *   System receives `invitee.canceled` webhook.
-        *   Log: `CalendlyInviteeCanceled, [CalendlyEventUUID], laura.chen@example.com, Received "invitee.canceled" event...`
-        *   (No further automated action on status/calendar event by default for cancellation).
-
-## Troubleshooting
-
-*   **Check Logs First:** The 'Logs' sheet is your primary diagnostic tool.
-*   **Authorization Issues:** Manually run a function (e.g., `dailyEmailBatch`) to trigger auth prompts if needed. Check "My Executions" in Apps Script dashboard.
-*   **Triggers Not Running:** Verify in "Triggers" section. Ensure `CONFIG.USER_TIMEZONE` is correct.
-*   **Emails Not Sending:** Check Gmail "Sent". Verify Gmail/Gemini quotas. Review `prompt.js`.
-*   **Calendly Webhook Issues:**
-    *   Double-check Web App URL in Calendly. Deployed with "Anyone" access?
-    *   Look for `CalendlyWebhookReceived` in logs. If `invitee.canceled` events aren't logged, ensure the webhook subscription includes this event.
-    *   If `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN` or `CONFIG.ORGANIZATION_URI` were incorrect during `createCalendlyWebhookSubscription`, it might have failed silently or with an error in logs/alerts; re-run that step if needed.
-*   **Google Calendar Events:** Check `CALENDAR_EVENT_ERROR` logs.
-*   **`LockService` Errors ("Could not obtain lock"):** Indicates functions are running too long or too frequently. Review execution times.
+### 6.3. Generic Follow-Ups (`followUpEmails`)
+- Runs on a daily trigger.
+- Identifies leads in "SENT" status who haven't been contacted for a set period (e.g., 7 days).
+- Generates a concise AI follow-up email using `getFollowUpEmailPrompt`.
+- Sends the email and updates status to "FOLLOW_UP_1".
 
 ---
-
-## Testing
-
-The project includes a test suite in `TestFramework.js` to verify core functionality. These tests are designed to be run manually from the Google Apps Script editor.
-
-**To run the tests:**
-
-1.  Open your Google Apps Script project.
-2.  Open the `TestFramework.js` file.
-3.  From the function dropdown menu in the Apps Script editor (it usually says "Select function"), choose the test function you want to run (e.g., `testBookingDetection`, `testEmailToProspect`, `testEmailToPR`, `testSlackNotification`).
-4.  Click the "Run" button (looks like a play icon).
-5.  Check the execution logs for test output: Go to "View" > "Logs" (or press `Ctrl+Enter` / `Cmd+Enter`). Each test logs its progress and results, prefixed with `[TEST]`. Look for overall success or failure messages for each test.
-
-**Test Functions Overview:**
-
-*   **`testBookingDetection()`**:
-    *   Simulates a Calendly `invitee.created` webhook.
-    *   Verifies that the test lead's status in the 'Leads' sheet is updated to "BOOKED".
-    *   Mocks `createCalendarEvent` and `sendPRAlert` to prevent actual calendar events or PR alerts.
-
-*   **`testEmailToProspect()`**:
-    *   Tests the generation and "sending" of an initial email to a prospect.
-    *   Mocks the Gemini API call (via `UrlFetchApp.fetch`) to return predefined AI content.
-    *   Mocks `GmailApp.sendEmail` to capture and verify the recipient, subject, and body.
-
-*   **`testEmailToPR()`**:
-    *   Tests the PR email notification functionality.
-    *   Mocks `GmailApp.sendEmail` to capture and verify parameters for the PR email (recipient should be `test@example.com` for the test).
-    *   Mocks `UrlFetchApp.fetch` (for Slack calls within `sendPRAlert`) and `Utilities.formatDate`.
-
-*   **`testSlackNotification()`**:
-    *   Tests the Slack notification functionality.
-    *   Mocks `UrlFetchApp.fetch` to capture and verify the Slack webhook URL and payload.
-    *   Temporarily sets `CONFIG.SLACK_WEBHOOK_URL` to the test URL (`https://hooks.slack.com/services/test/webhook`).
-    *   Mocks `GmailApp.sendEmail` and `Utilities.formatDate`.
-
-**Important Notes for Testing:**
-
-*   The tests use mock data defined within each test function.
-*   `testBookingDetection` will add a test lead (`john.test.booking@example.com`) to your 'Leads' sheet if it doesn't exist. It does not automatically clean up this lead after the test. You may want to manually delete it or adapt the test for cleanup if running repeatedly in a production sheet.
-*   Ensure `CONFIG` values in `Config.js` (like `SPREADSHEET_ID`) are correctly set up, as tests may rely on them to access resources like your Google Sheet.
-*   The tests are designed for a non-production environment or with caution, especially `testBookingDetection` if used with a live 'Leads' sheet.
-
----
-
-This README provides a comprehensive guide. Remember to carefully replace all placeholder values in `Config.js` with your actual information.
+*Make sure to regularly monitor the "Logs" sheet for system activity and any errors.*
