@@ -69,7 +69,8 @@ const STATUS = {
   UNQUALIFIED: 'UNQUALIFIED',
   BOOKED: 'BOOKED',
   ABANDONED: 'ABANDONED',
-  INVALID_EMAIL: 'INVALID_EMAIL' // For leads with improperly formatted email addresses.
+  INVALID_EMAIL: 'INVALID_EMAIL', // For leads with improperly formatted email addresses.
+  NEEDS_MANUAL_REVIEW: 'NEEDS_MANUAL_REVIEW' // Added for leads requiring manual attention
 };
 
 // To make CONFIG accessible if script properties are used later for some values:

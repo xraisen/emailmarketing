@@ -1,3 +1,34 @@
+// Check if a global logAction exists and is the more complex one (e.g., logging to a sheet)
+// For simplicity in this subtask, we'll define it scoped to this file if not globally available,
+// or assume the global one will be used if present.
+// A more robust check might involve typeof this.logAction !== 'function' if Utilities was a class,
+// but for standalone functions in Apps Script, direct definition or checking globalThis might be options.
+
+// Let's ensure a simple, console-based logAction is available if a more complex one isn't.
+// This ensures that findLeadData and getLeadInteractionHistory can always log something.
+if (typeof logAction === 'undefined') {
+  /**
+   * Logs an action to the Apps Script Logger or Console.
+   * This is a fallback version for Utilities.js if the main spreadsheet-logging logAction isn't available.
+   * @param {string} action The action performed.
+   * @param {string|null} leadId The ID of the lead.
+   * @param {string|null} email The email address.
+   * @param {string} details A description of the action.
+   * @param {string} status The status of the action (e.g., 'SUCCESS', 'ERROR', 'INFO').
+   */
+  function logAction(action, leadId, email, details, status) {
+    const logEntry = `[${new Date().toISOString()}] ${status} - Action: ${action}, LeadID: ${leadId || 'N/A'}, Email: ${email || 'N/A'}, Details: ${details}`;
+    if (typeof Logger !== 'undefined') {
+      Logger.log(logEntry);
+    } else {
+      console.log(logEntry);
+    }
+  }
+  console.log("Utilities.js: Defined local fallback logAction.");
+} else {
+  console.log("Utilities.js: Global logAction found. Will use it.");
+}
+
 // File: Utilities.js - Utility functions for the CRM Automation project
 
 /**
@@ -193,6 +224,139 @@ function getLeadInteractionHistory(leadId, email) {
   }
   
   return historySummary;
+function getLeadInteractionHistory(leadId, email) {
+  let historySummary = "";
+  let leadFirstName = "Prospect";
+  let leadStatus = "Unknown";
+  let initialHistoryGenerated = false; // Flag to check if basic lead info was added
+
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); // Main point of failure for Spreadsheet service
+
+    // 1. Get Lead's First Name and Status from Leads Sheet
+    try {
+      const leadsSheet = ss.getSheetByName(LEADS_SHEET_NAME);
+      if (leadsSheet) {
+        const leadData = findLeadData(leadsSheet, leadId, email);
+        if (leadData) {
+          leadFirstName = leadData.firstName || leadFirstName;
+          leadStatus = leadData.status || leadStatus;
+        }
+      } else {
+         logAction('GetLeadHistory_LeadsSheetError', leadId, email, `Leads sheet '${LEADS_SHEET_NAME}' not found.`, 'WARNING');
+         historySummary += `(Warning: Leads sheet '${LEADS_SHEET_NAME}' not found. Cannot retrieve name/status.)\n`;
+      }
+      historySummary += `Interaction History with ${leadFirstName} (${email || leadId}):\n`;
+      historySummary += `- Current Lead Status: ${leadStatus}.\n`;
+      initialHistoryGenerated = true;
+    } catch (e) {
+      logAction('GetLeadHistory_LeadsSheetError', leadId, email, `Error accessing Leads sheet: ${e.message}`, 'WARNING');
+      historySummary += "(Warning: Could not retrieve latest lead status/name details due to error.)\n";
+    }
+
+    // 2. Get Logs from Logs Sheet
+    try {
+      const logsSheet = ss.getSheetByName(LOGS_SHEET_NAME);
+      if (logsSheet) {
+        const logValues = logsSheet.getDataRange().getValues();
+        const logHeaders = logValues[0];
+        const logLeadIdCol = logHeaders.indexOf("Lead ID");
+        const logActionCol = logHeaders.indexOf("Action");
+        const logDetailsCol = logHeaders.indexOf("Details");
+        const logTimestampCol = logHeaders.indexOf("Timestamp");
+
+        if (logLeadIdCol === -1 || logActionCol === -1 || logDetailsCol === -1 || logTimestampCol === -1) {
+          historySummary += "Recent Logs: (Error: Log sheet columns missing)\n";
+          logAction('GetLeadHistory_LogsSheetError', leadId, email, 'Required column missing in Logs sheet. Headers: ' + logHeaders.join(', '), 'WARNING');
+        } else {
+          let relevantLogs = [];
+          for (let i = logValues.length - 1; i >= 1; i--) { // Start from end for recent logs
+            if (logValues[i][logLeadIdCol] === leadId) {
+              relevantLogs.push({
+                action: logValues[i][logActionCol],
+                details: logValues[i][logDetailsCol] ? String(logValues[i][logDetailsCol]).substring(0, 70) : '',
+                timestamp: new Date(logValues[i][logTimestampCol]).toLocaleDateString()
+              });
+              if (relevantLogs.length >= 3) break;
+            }
+          }
+          if (relevantLogs.length > 0) {
+            historySummary += "Recent Logs:\n";
+            relevantLogs.reverse().forEach(log => {
+              historySummary += `  - ${log.timestamp}: ${log.action} - ${log.details}...\n`;
+            });
+          } else {
+             historySummary += "Recent Logs: No specific logs found for this Lead ID.\n";
+          }
+        }
+      } else {
+        historySummary += "Recent Logs: (Logs sheet not found)\n";
+        logAction('GetLeadHistory_LogsSheetError', leadId, email, `Logs sheet '${LOGS_SHEET_NAME}' not found.`, 'WARNING');
+      }
+    } catch (e) {
+      logAction('GetLeadHistory_LogsSheetError', leadId, email, `Error accessing Logs sheet: ${e.message}`, 'WARNING');
+      historySummary += "(Warning: Could not retrieve some log history due to error.)\n";
+    }
+
+    // 3. Get from Gmail Thread
+    try {
+      if (email) { // Only attempt Gmail search if email is provided
+        if (typeof GmailApp !== 'undefined' && GmailApp) { // Check if service is available
+            const threads = GmailApp.search(`(to:${email} OR from:${email}) in:inbox`, 0, 1); // last thread
+            if (threads.length > 0) {
+              const messages = threads[0].getMessages();
+              if (messages.length > 0) {
+                const lastMessage = messages[messages.length - 1];
+                const snippet = lastMessage.getPlainBody().substring(0, 100);
+                const messageDate = new Date(lastMessage.getDate()).toLocaleDateString();
+                const from = lastMessage.getFrom();
+                historySummary += `Last Email in Thread (${messageDate}):\n`;
+                historySummary += `  - From: ${from}\n`;
+                historySummary += `  - Snippet: "${snippet}..."\n`;
+
+                if (messages.length > 1) {
+                  const secondLastMessage = messages[messages.length - 2];
+                  const snippet2 = secondLastMessage.getPlainBody().substring(0, 100);
+                  const messageDate2 = new Date(secondLastMessage.getDate()).toLocaleDateString();
+                  const from2 = secondLastMessage.getFrom();
+                  historySummary += `Second Last Email (${messageDate2}):\n`;
+                  historySummary += `  - From: ${from2}\n`;
+                  historySummary += `  - Snippet: "${snippet2}..."\n`;
+                }
+              } else {
+                 historySummary += "Gmail Thread: Last thread found but contains no messages.\n";
+              }
+            } else {
+              historySummary += "Gmail Thread: No recent threads found with this email.\n";
+            }
+        } else {
+            logAction('GetLeadHistory_GmailError', leadId, email, 'GmailApp service not available.', 'WARNING');
+            historySummary += "(Warning: Could not retrieve Gmail history - GmailApp service unavailable.)\n";
+        }
+      } else {
+          historySummary += "Gmail Thread: Email not provided for search.\n";
+      }
+    } catch (e) {
+      logAction('GetLeadHistory_GmailError', leadId, email, `Error accessing Gmail: ${e.message}`, 'WARNING');
+      historySummary += `(Warning: Could not retrieve Gmail history due to error: ${e.message})\n`;
+    }
+
+  } catch (e) { // Main catch for catastrophic errors (e.g. SPREADSHEET_ID wrong, Spreadsheet service completely down)
+    logAction('GetLeadHistoryError', leadId, email, `Critical Error during history retrieval: ${e.message} ${e.stack}`, 'ERROR');
+    // If the basic history wasn't even generated, return a more direct error. Otherwise, append to what was gathered.
+    if (!initialHistoryGenerated) {
+      return `(Critical Error: Could not retrieve interaction history for ${email || leadId} - ${e.message})\n`;
+    }
+    historySummary += `(Critical Error impacting history retrieval: ${e.message})\n`;
+  }
+
+  // Check if only the initial lines and status were added and no real content from logs/gmail
+  const linesInSummary = historySummary.split('\n').filter(line => line.trim() !== '' && !line.startsWith("(Warning:") && !line.startsWith("(Error:")).length;
+  if (linesInSummary <= 2 && initialHistoryGenerated) { // e.g., "Interaction History with..." and "Current Lead Status..."
+      return `No significant prior interaction found for ${leadFirstName} (${email || leadId}). Current Status: ${leadStatus}.`;
+  }
+  
+  return historySummary;
 }
 
 /**
@@ -222,4 +386,28 @@ function truncateString(str, maxLength, truncationMessage = "...") {
      return truncationMessage.substring(0, maxLength); 
   }
   return str.substring(0, effectiveMaxLength) + truncationMessage;
+}
+
+/**
+ * Formats a raw AI-generated email body for plain text readability.
+ * Ensures consistent double newlines between paragraphs.
+ * @param {string} rawAIBody The raw text generated by the AI.
+ * @return {string} The formatted text with normalized paragraph spacing.
+ */
+function formatPlainTextEmailBody(rawAIBody) {
+  if (!rawAIBody || typeof rawAIBody !== 'string') {
+    return rawAIBody || ""; // Return as is if not a string, or empty string if null/undefined
+  }
+
+  // 1. Normalize line endings to 
+
+  let text = rawAIBody.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // 2. Trim leading/trailing whitespace from the entire string
+  text = text.trim();
+
+  // 3. Split into paragraphs by one or more newlines, filter empty ones, then join with double newlines
+  const paragraphs = text.split(/\n+/).filter(p => p.trim() !== "");
+  
+  return paragraphs.join('\n\n');
 }
