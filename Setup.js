@@ -329,3 +329,25 @@ function createCalendlyWebhookSubscription(webAppUrl) {
     return false;
   }
 }
+
+// HELPER FUNCTION FOR MANUAL EXECUTION:
+// Creates the Calendly webhook subscription.
+// IMPORTANT: Before running this function from the Apps Script editor:
+// 1. Deploy your script as a Web App (Deploy > New deployment).
+// 2. Copy the Web App URL provided after deployment.
+// 3. Paste that URL into the placeholder string "YOUR_DEPLOYED_WEB_APP_URL_HERE" below.
+// 4. Save the script.
+// 5. Select 'runCreateWebhookHelper' from the function dropdown and click 'Run'.
+// Failure to replace the placeholder URL will result in an error.
+function runCreateWebhookHelper() {
+  const webAppUrl = "YOUR_DEPLOYED_WEB_APP_URL_HERE"; // <-- REPLACE THIS WITH YOUR ACTUAL WEB APP URL
+
+  if (webAppUrl === "YOUR_DEPLOYED_WEB_APP_URL_HERE" || !webAppUrl.startsWith("https://script.google.com/")) {
+    console.error("ERROR in runCreateWebhookHelper: The webAppUrl is still the placeholder or invalid. Please edit Setup.js and replace 'YOUR_DEPLOYED_WEB_APP_URL_HERE' with your actual deployed Web App URL.");
+    logAction('RunWebhookHelper', null, null, 'ERROR: webAppUrl not replaced in Setup.js. Please edit the runCreateWebhookHelper function.', 'ERROR');
+    // Optionally, alert the user if this is ever run in a context that allows UI (though the goal is to avoid UI alerts)
+    // SpreadsheetApp.getUi().alert("Configuration Error", "webAppUrl in runCreateWebhookHelper is not set. Please edit Setup.js.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  createCalendlyWebhookSubscription(webAppUrl);
+}

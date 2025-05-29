@@ -135,7 +135,7 @@ Once the system is fully set up and operational, here’s a detailed walkthrough
 
 *   **When a lead books a call (`invitee.created` event):**
     *   Calendly sends a webhook notification to your deployed Google Apps Script Web App.
-    *   The `doPost(e)` function in `automated_calendly.gs` processes this:
+    *   The `doPost(e)` function in `automated_calendly.js` processes this:
         *   It verifies the event is `invitee.created`.
         *   It finds the lead in the 'Leads' sheet by matching the email from the Calendly notification.
         *   The lead's `Status` is updated to `BOOKED`.
@@ -196,13 +196,13 @@ Follow these steps carefully to set up your $0 Cost Auto Email Sender.
     *   Rename the project (e.g., "$0 Cost Auto Email Sender").
 2.  **Copy Script Files:**
     *   Delete the default `Code.gs` file.
-    *   Create a new script file for each `.gs` file provided with this system, ensuring filenames match exactly:
-        *   `Config.gs`, `Setup.gs`, `Utilities.gs`, `prompt.gs`, `automated_email_sender.gs`, `automated_email_followup.gs`, `automated_email_sendPRAlert.gs`, `automated_calendly.gs`.
-    *   Copy the entire content of each provided `.gs` file into the corresponding file in your Apps Script project.
+    *   Create a new script file for each `.js` file provided with this system, ensuring filenames match exactly:
+        *   `Config.js`, `Setup.js`, `Utilities.js`, `prompt.js`, `automated_email_sender.js`, `automated_email_followup.js`, `automated_email_sendPRAlert.js`, `automated_calendly.js`.
+    *   Copy the entire content of each provided `.js` file into the corresponding file in your Apps Script project.
 
-**C. Configuration (`Config.gs`):**
+**C. Configuration (`Config.js`):**
 
-Open `Config.gs`. You **must** update these placeholders:
+Open `Config.js`. You **must** update these placeholders:
 
 *   `CONFIG.GEMINI_API_KEY`: Your Gemini API Key.
 *   `CONFIG.CALENDLY_LINK`: Your public Calendly booking page link.
@@ -230,15 +230,15 @@ When you first run functions, Apps Script will prompt for authorization.
 
 **Important:** The following setup functions *must* be run manually from the Apps Script editor in the specified order. These steps are crucial for configuring the system. The 'autonomous operation' of this system refers to the automated email sending, reply processing, and lead updates that occur *after* this initial manual setup is successfully completed.
 
-Run these functions from `Setup.gs` in the specified order:
-1.  **Update `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN`:** Open `Config.gs` and paste your actual Calendly Personal Access Token into the `CALENDLY_PERSONAL_ACCESS_TOKEN` field. Save the file.
+Run these functions from `Setup.js` in the specified order:
+1.  **Update `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN`:** Open `Config.js` and paste your actual Calendly Personal Access Token into the `CALENDLY_PERSONAL_ACCESS_TOKEN` field. Save the file.
 2.  **Run `initializeSheets()`:**
     *   Select `initializeSheets` from the function dropdown. Click "Run".
     *   Verify 'Leads' and 'Logs' sheets are created in your Google Sheet.
 3.  **Run `getCalendlyOrganizationUri()`:**
     *   Select `getCalendlyOrganizationUri` from the function dropdown. Click "Run".
     *   The Organization URI will be displayed in the Apps Script execution log (View > Logs). **Copy this URI from the logs.**
-4.  **Update `CONFIG.ORGANIZATION_URI`:** Open `Config.gs` and paste the copied Organization URI into the `ORGANIZATION_URI` field. Save the file.
+4.  **Update `CONFIG.ORGANIZATION_URI`:** Open `Config.js` and paste the copied Organization URI into the `ORGANIZATION_URI` field. Save the file.
 5.  **Run `setupTriggers()`:**
     *   Select `setupTriggers` from the function dropdown. Click "Run".
     *   Verify triggers are created in the "Triggers" section of Apps Script.
@@ -255,17 +255,33 @@ Run these functions from `Setup.gs` in the specified order:
 **G. Setup Calendly Webhook (Programmatic - Recommended):**
 
 1.  **Run `createCalendlyWebhookSubscription(webAppUrl)`:**
-    *   You need to pass the Web App URL (copied in Step F) as an argument. The easiest way is to create a temporary helper function in `Setup.gs` or any other `.gs` file:
+    *   You need to pass the Web App URL (copied in Step F) as an argument. The easiest way is to use (or create if not present) the `runCreateWebhookHelper` function in your `Setup.js` file. **It is critical to edit this function before running it**:
         ```javascript
+        // In Setup.js:
         function runCreateWebhookHelper() {
-          createCalendlyWebhookSubscription("YOUR_DEPLOYED_WEB_APP_URL_HERE");
+          // IMPORTANT: Replace the placeholder string below with your actual Web App URL
+          // obtained after deploying your script (see Step F).
+          const webAppUrl = "YOUR_DEPLOYED_WEB_APP_URL_HERE"; 
+
+          // --- Do not modify below this line unless you know what you are doing ---
+          if (webAppUrl === "YOUR_DEPLOYED_WEB_APP_URL_HERE" || !webAppUrl.startsWith("https://script.google.com/")) {
+            console.error("ERROR: webAppUrl in runCreateWebhookHelper is still the placeholder or invalid. Please edit Setup.js.");
+            // If logAction is available and configured:
+            // logAction('RunWebhookHelper', null, null, 'ERROR: webAppUrl not replaced in Setup.js', 'ERROR');
+            return; 
+          }
+          createCalendlyWebhookSubscription(webAppUrl);
         }
         ```
-        Replace the placeholder with your actual Web App URL.
+        **Before running `runCreateWebhookHelper`:**
+        1. Ensure you have completed Step F and copied your Web App URL.
+        2. **Open `Setup.js` in the Apps Script editor.**
+        3. **Replace `"YOUR_DEPLOYED_WEB_APP_URL_HERE"`** within the `runCreateWebhookHelper` function with your actual, copied Web App URL.
+        4. Save the `Setup.js` file.
     *   Select `runCreateWebhookHelper` from the function dropdown and click "Run".
     *   Check the Apps Script execution logs (View > Logs in the editor) and/or the 'Logs' sheet (if configured) for a success or error message from this function. It will no longer display a dialog box.
     *   Note: 'Programmatic - Recommended' means running this function (typically via the `runCreateWebhookHelper`) manually from the Apps Script editor. It automates the webhook creation with Calendly but is not a fully autonomous, hands-off step.
-*   **Manual Setup Alternative:** You can also set up webhooks manually in Calendly's UI. Point it to your Web App URL and select the `invitee.created` and `invitee.canceled` events. If Calendly provides a signing key during this manual setup, you should update `CONFIG.CALENDLY_SIGNING_KEY` in `Config.gs` with that key for more meaningful signature logging/verification.
+*   **Manual Setup Alternative:** You can also set up webhooks manually in Calendly's UI. Point it to your Web App URL and select the `invitee.created` and `invitee.canceled` events. If Calendly provides a signing key during this manual setup, you should update `CONFIG.CALENDLY_SIGNING_KEY` in `Config.js` with that key for more meaningful signature logging/verification.
 
 ## Example Scenario
 
@@ -306,7 +322,7 @@ Here's how the system might work for a single lead:
 *   **Check Logs First:** The 'Logs' sheet is your primary diagnostic tool.
 *   **Authorization Issues:** Manually run a function (e.g., `dailyEmailBatch`) to trigger auth prompts if needed. Check "My Executions" in Apps Script dashboard.
 *   **Triggers Not Running:** Verify in "Triggers" section. Ensure `CONFIG.USER_TIMEZONE` is correct.
-*   **Emails Not Sending:** Check Gmail "Sent". Verify Gmail/Gemini quotas. Review `prompt.gs`.
+*   **Emails Not Sending:** Check Gmail "Sent". Verify Gmail/Gemini quotas. Review `prompt.js`.
 *   **Calendly Webhook Issues:**
     *   Double-check Web App URL in Calendly. Deployed with "Anyone" access?
     *   Look for `CalendlyWebhookReceived` in logs. If `invitee.canceled` events aren't logged, ensure the webhook subscription includes this event.
@@ -316,4 +332,4 @@ Here's how the system might work for a single lead:
 
 ---
 
-This README provides a comprehensive guide. Remember to carefully replace all placeholder values in `Config.gs` with your actual information.
+This README provides a comprehensive guide. Remember to carefully replace all placeholder values in `Config.js` with your actual information.
