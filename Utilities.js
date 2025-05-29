@@ -30,8 +30,98 @@ if (typeof logAction === 'undefined') {
 }
 
 // File: Utilities.js - Utility functions for the CRM Automation project
+// Check if a global logAction exists and is the more complex one (e.g., logging to a sheet)
+// For simplicity in this subtask, we'll define it scoped to this file if not globally available,
+// or assume the global one will be used if present.
+// A more robust check might involve typeof this.logAction !== 'function' if Utilities was a class,
+// but for standalone functions in Apps Script, direct definition or checking globalThis might be options.
+
+// Let's ensure a simple, console-based logAction is available if a more complex one isn't.
+// This ensures that findLeadData and getLeadInteractionHistory can always log something.
+if (typeof logAction === 'undefined') {
+  /**
+   * Logs an action to the Apps Script Logger or Console.
+   * This is a fallback version for Utilities.js if the main spreadsheet-logging logAction isn't available.
+   * @param {string} action The action performed.
+   * @param {string|null} leadId The ID of the lead.
+   * @param {string|null} email The email address.
+   * @param {string} details A description of the action.
+   * @param {string} status The status of the action (e.g., 'SUCCESS', 'ERROR', 'INFO').
+   */
+  function logAction(action, leadId, email, details, status) {
+    const logEntry = `[${new Date().toISOString()}] ${status} - Action: ${action}, LeadID: ${leadId || 'N/A'}, Email: ${email || 'N/A'}, Details: ${details}`;
+    if (typeof Logger !== 'undefined') {
+      Logger.log(logEntry);
+    } else {
+      console.log(logEntry);
+    }
+  }
+  console.log("Utilities.js: Defined local fallback logAction.");
+} else {
+  console.log("Utilities.js: Global logAction found. Will use it.");
+}
+
+// File: Utilities.js - Utility functions for the CRM Automation project
 
 /**
+ * Finds lead data (firstName, status) from a given sheet.
+ * Assumes logAction is globally available or this function is used where it's defined.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet The sheet object to search in.
+ * @param {string} leadId The Lead ID to search for.
+ * @param {string} email The email address to search for.
+ * @return {object|null} An object with {firstName, status} or null if not found.
+ */
+function findLeadData(sheet, leadId, email) {
+  try {
+    if (!sheet) {
+      // Using console.error as a fallback if logAction isn't available when this specific utility is called.
+      console.error('findLeadData: Sheet object is null.'); 
+      logAction('FindLeadDataError', leadId, email, 'Sheet object provided was null.', 'ERROR');
+      return null;
+    }
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const leadIdCol = headers.indexOf("Lead ID");
+    const emailCol = headers.indexOf("Email");
+    const firstNameCol = headers.indexOf("First Name");
+    const statusCol = headers.indexOf("Status");
+
+    if (leadIdCol === -1 || emailCol === -1 || firstNameCol === -1 || statusCol === -1) {
+      const errorMessage = 'One or more required columns not found in the sheet headers: ' + headers.join(', ');
+      console.error('findLeadData: ' + errorMessage);
+      logAction('FindLeadDataError', leadId, email, 'Required column missing in Leads sheet. Headers: ' + headers.join(', '), 'ERROR');
+      return null;
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      const rowLeadId = data[i][leadIdCol];
+      const rowEmail = data[i][emailCol];
+
+      const emailToCompare = email ? String(email).toLowerCase() : null;
+      const rowEmailToCompare = rowEmail ? String(rowEmail).toLowerCase() : null;
+
+      if ((leadId && rowLeadId === leadId) || (emailToCompare && rowEmailToCompare === emailToCompare)) {
+        return {
+          firstName: data[i][firstNameCol] || "Prospect",
+          status: data[i][statusCol] || "Unknown"
+        };
+      }
+    }
+  } catch (e) {
+    const exceptionMessage = `Exception in findLeadData: ${e.message} ${e.stack}`;
+    console.error(exceptionMessage);
+    logAction('FindLeadDataError', leadId, email, exceptionMessage, 'ERROR');
+    return null;
+  }
+  return null; // Not found
+}
+
+/**
+ * Retrieves and summarizes the interaction history of a lead from logs and Gmail.
+ * Assumes CONFIG, LEADS_SHEET_NAME, LOGS_SHEET_NAME, logAction are globally available.
+ * @param {string} leadId The Lead ID.
+ * @param {string} email The lead's email address.
+ * @return {string} A concise summary of the interaction history, or a message indicating no/partial history.
  * Finds lead data (firstName, status) from a given sheet.
  * Assumes logAction is globally available or this function is used where it's defined.
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet The sheet object to search in.
@@ -227,6 +317,56 @@ function getLeadInteractionHistory(leadId, email) {
 }
 
 /**
+ * Truncates a string to a maximum length, appending a message if truncated.
+ * @param {string} str The string to truncate.
+ * @param {number} maxLength The maximum desired length of the string (including truncation message).
+ * @param {string} [truncationMessage="..."] The message to append if truncation occurs.
+ * @return {string} The truncated string, or the original if within limits.
+ */
+function truncateString(str, maxLength, truncationMessage = "...") {
+  if (!str || typeof str !== 'string') {
+    return str; // Or return "" if preferred for non-strings
+  }
+  if (str.length <= maxLength) {
+    return str;
+  }
+  // Ensure truncationMessage itself isn't longer than maxLength
+  if (truncationMessage.length > maxLength) {
+      return truncationMessage.substring(0, maxLength);
+  }
+  
+  const effectiveMaxLength = maxLength - truncationMessage.length;
+  
+  // It's possible effectiveMaxLength becomes 0 or negative if maxLength is very small
+  // and equal to or less than truncationMessage.length. In this case, just return the truncated message.
+  if (effectiveMaxLength <= 0) { 
+     return truncationMessage.substring(0, maxLength); 
+  }
+  return str.substring(0, effectiveMaxLength) + truncationMessage;
+}
+
+/**
+ * Formats a raw AI-generated email body for plain text readability.
+ * Ensures consistent double newlines between paragraphs.
+ * @param {string} rawAIBody The raw text generated by the AI.
+ * @return {string} The formatted text with normalized paragraph spacing.
+ */
+function formatPlainTextEmailBody(rawAIBody) {
+  if (!rawAIBody || typeof rawAIBody !== 'string') {
+    return rawAIBody || ""; // Return as is if not a string, or empty string if null/undefined
+  }
+
+  // 1. Normalize line endings to 
+
+  let text = rawAIBody.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // 2. Trim leading/trailing whitespace from the entire string
+  text = text.trim();
+
+  // 3. Split into paragraphs by one or more newlines, filter empty ones, then join with double newlines
+  const paragraphs = text.split(/\n+/).filter(p => p.trim() !== "");
+  
+  return paragraphs.join('\n\n');
  * Truncates a string to a maximum length, appending a message if truncated.
  * @param {string} str The string to truncate.
  * @param {number} maxLength The maximum desired length of the string (including truncation message).

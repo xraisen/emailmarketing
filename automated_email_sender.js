@@ -480,6 +480,152 @@ function processReplies() {
                 }
             } else if (sheet.getRange(actualSheetRow, colIdx['Status'] + 1).getValue() === STATUS.HOT) { // Only update Last Contact if not already set by manual review path
                  sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+            // 1. Handle explicit opt-out first
+            const lowerBody = body.toLowerCase(); // Ensure body is lowercased for opt-out checks
+            if (lowerBody.includes('stop') || lowerBody.includes('unsubscribe') || lowerBody.includes('remove me')) {
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
+                sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+                logAction('ProcessRepliesOptOut', leadId, senderEmail, 'Lead opted out via reply.', 'SUCCESS');
+                thread.markRead();
+                SpreadsheetApp.flush();
+                leadFoundAndProcessed = true;
+                break; // from inner lead search loop
+            }
+
+            // 2. Attempt AI Classification
+            // Pass original body (not lowercased) to AI if it might affect understanding, though prompts.js usually expects it to be handled
+            // For this implementation, `body` was already lowercased earlier in the function.
+
+            // New: Get Interaction History
+            const interactionHistorySummaryRaw = getLeadInteractionHistory(leadId, senderEmail); // Assuming getLeadInteractionHistory is globally available from Utilities.js
+            const MAX_HISTORY_LENGTH = 2000; // Define a constant or use a CONFIG value if preferred
+            const interactionHistorySummary = truncateString(interactionHistorySummaryRaw, MAX_HISTORY_LENGTH, " [History truncated]"); // Use truncateString from Utilities.js
+
+            logAction('ProcessRepliesHistory', leadId, senderEmail, `Retrieved interaction history (raw length: ${interactionHistorySummaryRaw ? interactionHistorySummaryRaw.length : 0}, truncated length: ${interactionHistorySummary ? interactionHistorySummary.length : 0}): ${interactionHistorySummary ? interactionHistorySummary.substring(0, 300) + "..." : "None"}`, 'INFO');
+
+            // Modified: Call AI Classification with history (passing the truncated summary)
+            const classifiedData = classifyProspectReply(body, firstName, interactionHistorySummary); 
+            // The existing 'ProcessRepliesRawClassification' log will include the new sentiment field automatically.
+            logAction('ProcessRepliesRawClassification', leadId, senderEmail, `Raw AI classification data: ${JSON.stringify(classifiedData)}`, 'INFO');
+
+            const sentiment = classifiedData ? classifiedData.sentiment : null; // Get sentiment
+            const confidence = classifiedData ? classifiedData.classification_confidence : null; // Get confidence
+            logAction('ProcessRepliesSentiment', leadId, senderEmail, `AI Classified Sentiment: ${sentiment}`, 'INFO');
+            logAction('ProcessRepliesConfidence', leadId, senderEmail, `AI Classification Confidence: ${confidence === null || confidence === undefined ? 'N/A' : confidence.toFixed(2)}`, 'INFO'); // New log
+
+            // Handle negative sentiment explicitly first
+            let sendManualReviewNotification = false; // Flag to control single notification
+            let manualReviewReason = "";
+            const LOW_CONFIDENCE_THRESHOLD = 0.70;
+
+            if (sentiment === "negative") {
+                logAction('ProcessRepliesNegativeSentiment', leadId, senderEmail, 'Negative sentiment detected by AI. Marking as UNQUALIFIED.', 'INFO');
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
+                sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+                // No AI follow-up email is sent.
+            
+            // New Manual Review Logic
+            } else if (!classifiedData) {
+                sendManualReviewNotification = true;
+                manualReviewReason = "AI classification failed (classifiedData is null).";
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+            } else if (sentiment === "neutral" && classifiedData.identified_services && classifiedData.identified_services.length > 0 && classifiedData.identified_services[0] === "Generic Inquiry") {
+                sendManualReviewNotification = true;
+                manualReviewReason = `Neutral sentiment for Generic Inquiry. Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}. Summary: ${classifiedData.summary_of_need || 'N/A'}`;
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+            } else if (confidence !== null && confidence < LOW_CONFIDENCE_THRESHOLD) {
+                sendManualReviewNotification = true;
+                manualReviewReason = `Low AI classification confidence: ${confidence.toFixed(2)}. Services: ${(classifiedData.identified_services || []).join(', ')}. Summary: ${classifiedData.summary_of_need || 'N/A'}`;
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+            
+            // Main AI Follow-up Path (Positive/Neutral sentiment, Specific Service, Sufficient Confidence)
+            } else if (classifiedData.identified_services && classifiedData.identified_services.length > 0 && classifiedData.identified_services[0] !== "Generic Inquiry" && (sentiment === "positive" || sentiment === "neutral")) {
+                // This implies confidence is sufficient or null (treated as sufficient if not low)
+                logAction('ProcessRepliesAILogic', leadId, senderEmail, `Proceeding with AI follow-up. Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}`, 'INFO');
+                // Modified: Call AI Follow-up Generation with history
+                const aiFollowUpBodyRaw = generateAIContextualFollowUp(classifiedData, firstName, YOUR_NAME, AI_SERVICE_PROFILE, interactionHistorySummary);
+
+                if (aiFollowUpBodyRaw) {
+                    let chosenCalendlyLink = DEFAULT_CALENDLY_LINK;
+                    const identifiedServices = classifiedData.identified_services; 
+
+                    if (identifiedServices && identifiedServices.length > 0 && identifiedServices[0] !== "Generic Inquiry") {
+                        if (identifiedServices.length === 1) {
+                            const serviceName = identifiedServices[0];
+                            if (AI_SERVICE_PROFILE[serviceName] && AI_SERVICE_PROFILE[serviceName].calendlyLink) {
+                                chosenCalendlyLink = AI_SERVICE_PROFILE[serviceName].calendlyLink;
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service identified: ${serviceName}. Using its specific link.`, 'INFO');
+                            } else {
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service: ${serviceName}, no specific link. Default.`, 'INFO');
+                            }
+                        } else { 
+                            const servicePriority = ["Web Design & Development", "Google Ads Management", "GMC/Feed Management", "Funnels", "AI Automation", "Tech Strategy"];
+                            let foundPriorityLink = false;
+                            for (const priorityService of servicePriority) {
+                                if (identifiedServices.includes(priorityService) && AI_SERVICE_PROFILE[priorityService] && AI_SERVICE_PROFILE[priorityService].calendlyLink) {
+                                    chosenCalendlyLink = AI_SERVICE_PROFILE[priorityService].calendlyLink;
+                                    logAction('ProcessRepliesCalendly', leadId, senderEmail, `Multiple services. Priority link for: ${priorityService}`, 'INFO');
+                                    foundPriorityLink = true;
+                                    break;
+                                }
+                            }
+                            if (!foundPriorityLink) {
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Multiple services. No priority link found. Default.', 'INFO');
+                            }
+                        }
+                    } else { 
+                        logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Generic/no specific service. Default Calendly link.', 'INFO');
+                    }
+                    
+                    const formattedAIBody = formatPlainTextEmailBody(aiFollowUpBodyRaw); // Use the new utility
+                    const calendlyLinkSentence = "Here’s the link to book a meeting: " + chosenCalendlyLink;
+                    
+                    // Construct final body: Formatted AI Body + Blank Line + Calendly Sentence + Blank Line + Footer
+                    const finalAIFollowUpBody = formattedAIBody + "\n\n" + calendlyLinkSentence + "\n\n" + CONFIG.EMAIL_FOOTER;
+                    
+                    const subject = `Re: Your Inquiry - ${(classifiedData.identified_services.join(' & ') || "Following Up")}`;
+
+                    if (sendEmail(senderEmail, subject, finalAIFollowUpBody, leadId)) {
+                        sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.HOT);
+                        sendPRAlert(firstName, classifiedData.identified_services.join(', '), senderEmail, phone, `HOT - AI Classified (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'})`, leadId); 
+                        logAction('ProcessRepliesAIFollowUpSent', leadId, senderEmail, `AI Follow-up sent (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}). Classified: ${classifiedData.identified_services.join(', ')}. Subject: ${subject}`, 'SUCCESS');
+                    } else {
+                        logAction('ProcessRepliesAIFollowUpSendError', leadId, senderEmail, `Failed to send AI follow-up (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}).`, 'ERROR');
+                    }
+                } else { // AI Follow-up generation failed
+                    sendManualReviewNotification = true; // Flag for manual review if AI body generation fails
+                    manualReviewReason = `AI follow-up generation failed (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}). Services: ${(classifiedData.identified_services || []).join(', ')}.`;
+                    sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+                    // AI Follow-up Generation Failed (aiFollowUpBodyRaw is null)
+                    manualReviewReason = `AI follow-up generation failed (returned null). Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}. Classified services: ${(classifiedData.identified_services || []).join(', ')}.`;
+                    logAction('ProcessRepliesAIGenerationFail', leadId, senderEmail, manualReviewReason, 'ERROR');
+                    
+                    sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+                    // sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date()); // This will be set by the notification block
+                    logAction('ProcessRepliesSetToManualReview', leadId, senderEmail, `Status set to NEEDS_MANUAL_REVIEW due to AI follow-up generation failure.`, 'WARNING');
+                    sendManualReviewNotification = true; // Ensure notification is sent
+                }
+            } else { // Fallback: Not negative, but not meeting criteria for AI follow-up (e.g., Positive Generic, or other unhandled edge cases)
+                sendManualReviewNotification = true;
+                manualReviewReason = `Not proceeding with AI follow-up. Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}. Services: ${(classifiedData && classifiedData.identified_services ? classifiedData.identified_services.join(', ') : 'N/A')}. Summary: ${(classifiedData && classifiedData.summary_of_need ? classifiedData.summary_of_need : 'N/A')}.`;
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+                logAction('ProcessRepliesToManualReviewFallback', leadId, senderEmail, manualReviewReason, 'INFO');
+            }
+
+            // Send Manual Review Notification Email if flagged
+            if (sendManualReviewNotification) {
+                sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date()); // Update last contact for manual review cases too
+                logAction('ProcessRepliesManualReview', leadId, senderEmail, `Lead flagged for manual review. Reason: ${manualReviewReason}`, 'WARNING');
+                const reviewSubject = `Lead Needs Manual Review: ${firstName} (${leadId})`;
+                const reviewBody = `Lead: ${firstName} (${senderEmail}, ID: ${leadId}) has been flagged for manual review.\n\nReason: ${manualReviewReason}\n\nPlease review their status and reply in the sheet: https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/edit\n\nOriginal reply snippet (first 300 chars):\n${body.substring(0,300)}...`;
+                try {
+                    GmailApp.sendEmail(CONFIG.PR_EMAIL, reviewSubject, reviewBody);
+                    logAction('ProcessRepliesManualReviewNotifSent', leadId, senderEmail, 'Manual review notification email sent.', 'INFO');
+                } catch (e) {
+                    logAction('ProcessRepliesManualReviewNotifError', leadId, senderEmail, `Error sending manual review notification: ${e.message}`, 'ERROR');
+                }
+            } else if (sheet.getRange(actualSheetRow, colIdx['Status'] + 1).getValue() === STATUS.HOT) { // Only update Last Contact if not already set by manual review path
+                 sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
             }
             
             thread.markRead();
