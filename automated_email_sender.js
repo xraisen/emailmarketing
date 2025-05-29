@@ -73,7 +73,7 @@ function getAIEmailContent(promptText) { // MODIFIED SIGNATURE
 // (Make sure getAIEmailContent is the modified version)
 // (Make sure CONFIG is accessible for yourName if it's stored there, or pass it directly)
 
-function generateAIContextualFollowUp(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) { // NEW signature
+function generateAIContextualFollowUp(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) {
   try {
     // interactionHistorySummary can be null/empty, so no strict check needed for it here.
     if (!classifiedData || !leadFirstName || !yourName || !serviceProfile) {
@@ -83,7 +83,23 @@ function generateAIContextualFollowUp(classifiedData, leadFirstName, yourName, s
       return null;
     }
 
-    const followUpPrompt = getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary); // NEW: Pass interactionHistorySummary
+    // Fetch additional CONFIG values for the prompt
+    const emailClosing = CONFIG.EMAIL_CLOSING;
+    const signatureTitle = CONFIG.SIGNATURE_TITLE;
+    const signatureCompany = CONFIG.SIGNATURE_COMPANY;
+    const emailFooter = CONFIG.EMAIL_FOOTER;
+
+    const followUpPrompt = getContextualFollowUpPrompt(
+      classifiedData,
+      leadFirstName,
+      yourName, // This is CONFIG.SIGNATURE_NAME, passed as a parameter
+      serviceProfile,
+      interactionHistorySummary,
+      emailClosing,
+      signatureTitle,
+      signatureCompany,
+      emailFooter
+    );
     logAction('GenerateAIFollowUpInfo', null, null, `Generated follow-up prompt: ${followUpPrompt.substring(0, 200)}...`, 'INFO');
 
 
@@ -213,9 +229,10 @@ function dailyEmailBatch() {
             continue; 
           }
 
-          const subject = `Free Audit for ${lastService}`; // Simple subject line
+          const baseSubject = `Free Audit for ${lastService}`;
+          const finalSubject = CONFIG.SUBJECT_PREFIX ? CONFIG.SUBJECT_PREFIX + " " + baseSubject : baseSubject;
 
-          if (sendEmail(email, subject, aiContent, leadIdValue)) {
+          if (sendEmail(email, finalSubject, aiContent, leadIdValue)) {
             sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.SENT);
             sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
             emailsSentThisExecution++;
@@ -266,7 +283,7 @@ function processReplies() {
       logAction('ProcessRepliesStart', null, null, 'Hourly reply processing started with lock.', 'INFO');
 
       // Pre-computation/Setup
-      const YOUR_NAME = "Jose"; // Or from a config
+      const YOUR_NAME = CONFIG.SIGNATURE_NAME; // Use CONFIG for signature name
       const AI_SERVICE_PROFILE = CONFIG.AI_SERVICES_PROFILE;
       const DEFAULT_CALENDLY_LINK = CONFIG.CALENDLY_LINK;
       // const EMAIL_FOOTER_TEXT = CONFIG.EMAIL_FOOTER; // AI prompt handles this
@@ -414,9 +431,10 @@ function processReplies() {
                     const finalAIFollowUpBody = aiFollowUpBodyRaw + `
 
 Here’s the link to book a meeting: ${chosenCalendlyLink}`;
-                    const subject = `Re: Your Inquiry - ${(classifiedData.identified_services.join(' & ') || "Following Up")}`;
+                    const baseSubject = `Re: Your Inquiry - ${(classifiedData.identified_services.join(' & ') || "Following Up")}`;
+                    const finalSubject = CONFIG.SUBJECT_PREFIX ? CONFIG.SUBJECT_PREFIX + " " + baseSubject : baseSubject;
 
-                    if (sendEmail(senderEmail, subject, finalAIFollowUpBody, leadId)) {
+                    if (sendEmail(senderEmail, finalSubject, finalAIFollowUpBody, leadId)) {
                         sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.HOT);
                         sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
                         sendPRAlert(firstName, classifiedData.identified_services.join(', '), senderEmail, phone, `HOT - AI Classified (Sentiment: ${sentiment})`, leadId); // Updated PR Alert
