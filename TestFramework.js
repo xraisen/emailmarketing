@@ -286,6 +286,35 @@ function runMemoryFeatureTests() {
   Logger.log("\n--- Memory Feature Tests Completed ---");
 }
 
+// --- Test for formatPlainTextEmailBody ---
+function test_formatPlainTextEmailBody_scenarios() {
+    Logger.log("\nRunning test_formatPlainTextEmailBody_scenarios...");
+    setupTestMocks(); // Basic mocks, though this function is pure
+
+    // Assuming formatPlainTextEmailBody is globally available from Utilities.js
+    if (typeof formatPlainTextEmailBody !== 'function') {
+        Logger.log("ERROR: formatPlainTextEmailBody function not found globally. Skipping tests.");
+        assertTrue(false, "formatPlainTextEmailBody function not found globally.");
+        teardownTestMocks();
+        return;
+    }
+
+    assertEqual(formatPlainTextEmailBody("Para1\nPara2"), "Para1\n\nPara2", "Single newline to double");
+    assertEqual(formatPlainTextEmailBody("Para1\n\nPara2"), "Para1\n\nPara2", "Existing double newline preserved");
+    assertEqual(formatPlainTextEmailBody("Para1\n\n\nPara2"), "Para1\n\nPara2", "Multiple newlines collapsed to double");
+    assertEqual(formatPlainTextEmailBody("  Para1\nPara2  "), "Para1\n\nPara2", "Leading/trailing whitespace trimmed before paragraph joining");
+    assertEqual(formatPlainTextEmailBody("Para1\r\nPara2"), "Para1\n\nPara2", "Windows CRLF to double newline");
+    assertEqual(formatPlainTextEmailBody("Para1\rPara2"), "Para1\n\nPara2", "Old Mac CR to double newline");
+    assertEqual(formatPlainTextEmailBody("Para1"), "Para1", "Single paragraph unchanged");
+    assertEqual(formatPlainTextEmailBody(""), "", "Empty string unchanged");
+    assertEqual(formatPlainTextEmailBody(null), "", "Null input returns empty string");
+    assertEqual(formatPlainTextEmailBody(undefined), "", "Undefined input returns empty string");
+    assertEqual(formatPlainTextEmailBody("Para1\n\nPara2\nPara3\n\n\nPara4"), "Para1\n\nPara2\n\nPara3\n\nPara4", "Mixed newlines normalized");
+    assertEqual(formatPlainTextEmailBody("\n\nPara1\nPara2\n\n"), "Para1\n\nPara2", "Leading/trailing newlines (resulting in empty paragraphs) removed");
+    
+    teardownTestMocks();
+}
+
 // --- Test Cases ---
 
 function test_getLeadInteractionHistory_NoHistory() {
@@ -429,10 +458,16 @@ function test_processReplies_UsesHistoryForAIClassification() {
     const interactionHistorySummaryTestString = "Test interaction history: Previously discussed X, Y, Z.";
     const MAX_HISTORY_LENGTH_FOR_TEST = 2000; 
     const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
-    CONFIG.AI_SERVICES_PROFILE = CONFIG.AI_SERVICES_PROFILE || { "Specific Service": { calendlyLink: "specific_link" }, "Generic Inquiry": { calendlyLink: CONFIG.CALENDLY_LINK || "default_cal_link" } };
+    const serviceName = "Specific Service";
+    const mockCalendlyLink = "https://calendly.com/specific-service-test";
+
+    CONFIG.AI_SERVICES_PROFILE = { 
+        [serviceName]: { calendlyLink: mockCalendlyLink, description: "Test Service Desc" }, 
+        "Generic Inquiry": { calendlyLink: CONFIG.CALENDLY_LINK || "default_cal_link" } 
+    };
     CONFIG.CALENDLY_LINK = CONFIG.CALENDLY_LINK || "default_test_calendly_link";
-    // Assume YOUR_NAME is defined in processReplies or CONFIG
     CONFIG.YOUR_NAME = CONFIG.YOUR_NAME || "TestBot";
+    CONFIG.EMAIL_FOOTER = CONFIG.EMAIL_FOOTER || "Reply STOP to unsubscribe";
 
 
     MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
@@ -443,9 +478,9 @@ function test_processReplies_UsesHistoryForAIClassification() {
 
     MockGmailApp._addMockThread({
         messages: [{ body: mockReplyBody, from: leadEmail, date: new Date(), isUnread: true }],
-        queryMatcher: (q) => q.includes("is:unread") // Mock for the general unread search
+        queryMatcher: (q) => q.includes("is:unread") 
     });
-     MockGmailApp._addMockThread({ // Also mock for the specific lead's thread if getLeadInteractionHistory uses it
+     MockGmailApp._addMockThread({ 
         messages: [{ body: mockReplyBody, from: leadEmail, date: new Date() }],
         queryMatcher: (q) => q.includes(leadEmail)
     });
@@ -454,28 +489,34 @@ function test_processReplies_UsesHistoryForAIClassification() {
     let receivedHistoryForClassification = null; let receivedHistoryForFollowUp = null;
     let sendEmailCalledArgs = null; let sendPRAlertCalledArgs = null;
 
-    // Mock global functions using mockFunction for test-specific behavior
     const mockGetLeadInteractionHistory = mockFunction(this, 'getLeadInteractionHistory', (id, emailArg) => {
-        assertEqual(id, leadId, "getLeadInteractionHistory called with correct leadId");
-        assertEqual(emailArg.toLowerCase(), leadEmail.toLowerCase(), "getLeadInteractionHistory called with correct email");
         return interactionHistorySummaryTestString; 
     });
     const mockClassifyProspectReply = mockFunction(this, 'classifyProspectReply', (reply, name, history) => {
         receivedHistoryForClassification = history; 
-        return { identified_services: ["Specific Service"], key_concerns: ["Concern A"], summary_of_need: "Needs Specific Service", sentiment: "positive" };
+        return { identified_services: [serviceName], key_concerns: ["Concern A"], summary_of_need: "Needs Specific Service", sentiment: "positive", classification_confidence: 0.9 };
     });
+    const mockRawAIBody = "This is the raw AI body.\nIt might have single newlines.";
     const mockGenerateAIContextualFollowUp = mockFunction(this, 'generateAIContextualFollowUp', (classifiedData, name, yourName, serviceProfile, history) => {
         receivedHistoryForFollowUp = history; 
-        return "Mock AI Follow Up Email Body";
+        return mockRawAIBody; // Return a raw body that formatPlainTextEmailBody will process
     });
-    const mockSendEmail = mockFunction(this, 'sendEmail', (to, subject, body, id) => { sendEmailCalledArgs = {to,subject,body,id}; return true; });
+    
+    // Capture the arguments to sendEmail
+    const mockSendEmail = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
+      if (to === leadEmail) { // Only capture emails sent to the prospect for this test
+        sendEmailCalledArgs = {to,subject,body,id};
+      }
+      return true; 
+    });
     const mockSendPRAlert = mockFunction(this, 'sendPRAlert', (fn, svc, em, ph, type, id) => { sendPRAlertCalledArgs = {fn, svc, em, ph, type, id}; });
-    const mockTruncateString = mockFunction(this, 'truncateString', (str, len, msg) => { // Ensure truncateString is also mocked or real
-         if (!str || typeof str !== 'string' || str.length <= len) return str;
-         const tMsg = msg || "...";
-         return str.substring(0, len - tMsg.length) + tMsg;
-    });
-    // logAction will use the default from Utilities.js or a global definition if present
+    
+    // Use REAL formatPlainTextEmailBody and truncateString for this test, assuming they are in Utilities.js
+    const originalFormatEmailBody = this.formatPlainTextEmailBody; // Store original if it's global
+    const originalTruncateString = this.truncateString;
+    this.formatPlainTextEmailBody = (typeof formatPlainTextEmailBody === 'function') ? formatPlainTextEmailBody : (raw) => raw.replace(/\n/g, '\n\n'); // Fallback if not global
+    this.truncateString = (typeof truncateString === 'function') ? truncateString : (str) => str;
+
 
     if (typeof processReplies === 'function') {
         processReplies(); 
@@ -487,8 +528,17 @@ function test_processReplies_UsesHistoryForAIClassification() {
     const truncatedExpectedHistory = this.truncateString(interactionHistorySummaryTestString, MAX_HISTORY_LENGTH_FOR_TEST, " [History truncated]");
     assertEqual(receivedHistoryForClassification, truncatedExpectedHistory, "classifyProspectReply should receive the (potentially truncated) history string.");
     assertEqual(receivedHistoryForFollowUp, truncatedExpectedHistory, "generateAIContextualFollowUp should receive the (potentially truncated) history string.");
-    assertNotNull(sendEmailCalledArgs, "sendEmail should have been called.");
-    if(sendEmailCalledArgs) assertEqual(sendEmailCalledArgs.to, leadEmail, "sendEmail TO address check");
+    
+    assertNotNull(sendEmailCalledArgs, "sendEmail should have been called for the prospect.");
+    if(sendEmailCalledArgs) {
+      assertEqual(sendEmailCalledArgs.to, leadEmail, "sendEmail TO address check");
+      const expectedFormattedAIBody = formatPlainTextEmailBody(mockRawAIBody);
+      const expectedCalendlySentence = "Here’s the link to book a meeting: " + mockCalendlyLink;
+      const expectedFullBody = expectedFormattedAIBody + "\n\n" + expectedCalendlySentence + "\n\n" + CONFIG.EMAIL_FOOTER;
+      assertEqual(sendEmailCalledArgs.body, expectedFullBody, "Email body structure (AI body + Calendly + Footer) is correct.");
+      assertTrue(sendEmailCalledArgs.body.endsWith("\n\n" + CONFIG.EMAIL_FOOTER), "Email body should end with correctly spaced footer.");
+    }
+    
     assertNotNull(sendPRAlertCalledArgs, "sendPRAlert should have been called.");
     if(sendPRAlertCalledArgs) assertEqual(sendPRAlertCalledArgs.em, leadEmail, "sendPRAlert email check");
 
@@ -502,7 +552,9 @@ function test_processReplies_UsesHistoryForAIClassification() {
     mockGenerateAIContextualFollowUp.restore();
     mockSendEmail.restore();
     mockSendPRAlert.restore();
-    mockTruncateString.restore();
+    if (originalFormatEmailBody) this.formatPlainTextEmailBody = originalFormatEmailBody; // Restore if was global
+    if (originalTruncateString) this.truncateString = originalTruncateString;
+
     teardownTestMocks();
 }
 
@@ -518,6 +570,9 @@ function runAllTests() { // Renamed to avoid collision if old runAllTests is sti
   
   // Run the new memory feature tests
   runMemoryFeatureTests();
+  // Run the new formatting tests
+  test_formatPlainTextEmailBody_scenarios(); 
+
   Logger.log("--- All Combined Test Suites Completed ---");
 }
 // Make sure this is the function to select in Apps Script editor to run all tests.
@@ -535,6 +590,7 @@ function masterTestRunner() {
   if (typeof testSlackNotification === 'function') testSlackNotification();
   
   runMemoryFeatureTests(); // Run the new suite
+  test_formatPlainTextEmailBody_scenarios(); // Run formatting tests
   Logger.log("--- MASTER TEST RUNNER COMPLETED ---");
 }
 

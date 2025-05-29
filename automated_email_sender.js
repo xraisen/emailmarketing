@@ -431,7 +431,12 @@ function processReplies() {
                         logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Generic/no specific service. Default Calendly link.', 'INFO');
                     }
                     
-                    const finalAIFollowUpBody = aiFollowUpBodyRaw + `\n\nHere’s the link to book a meeting: ${chosenCalendlyLink}`;
+                    const formattedAIBody = formatPlainTextEmailBody(aiFollowUpBodyRaw); // Use the new utility
+                    const calendlyLinkSentence = "Here’s the link to book a meeting: " + chosenCalendlyLink;
+                    
+                    // Construct final body: Formatted AI Body + Blank Line + Calendly Sentence + Blank Line + Footer
+                    const finalAIFollowUpBody = formattedAIBody + "\n\n" + calendlyLinkSentence + "\n\n" + CONFIG.EMAIL_FOOTER;
+                    
                     const subject = `Re: Your Inquiry - ${(classifiedData.identified_services.join(' & ') || "Following Up")}`;
 
                     if (sendEmail(senderEmail, subject, finalAIFollowUpBody, leadId)) {
