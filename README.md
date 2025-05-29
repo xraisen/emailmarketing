@@ -228,6 +228,8 @@ When you first run functions, Apps Script will prompt for authorization.
 
 **E. Initial Setup Functions (Run Manually from Apps Script Editor):**
 
+**Important:** The following setup functions *must* be run manually from the Apps Script editor in the specified order. These steps are crucial for configuring the system. The 'autonomous operation' of this system refers to the automated email sending, reply processing, and lead updates that occur *after* this initial manual setup is successfully completed.
+
 Run these functions from `Setup.gs` in the specified order:
 1.  **Update `CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN`:** Open `Config.gs` and paste your actual Calendly Personal Access Token into the `CALENDLY_PERSONAL_ACCESS_TOKEN` field. Save the file.
 2.  **Run `initializeSheets()`:**
@@ -235,7 +237,7 @@ Run these functions from `Setup.gs` in the specified order:
     *   Verify 'Leads' and 'Logs' sheets are created in your Google Sheet.
 3.  **Run `getCalendlyOrganizationUri()`:**
     *   Select `getCalendlyOrganizationUri` from the function dropdown. Click "Run".
-    *   A dialog box will show your Organization URI. **Copy this URI.**
+    *   The Organization URI will be displayed in the Apps Script execution log (View > Logs). **Copy this URI from the logs.**
 4.  **Update `CONFIG.ORGANIZATION_URI`:** Open `Config.gs` and paste the copied Organization URI into the `ORGANIZATION_URI` field. Save the file.
 5.  **Run `setupTriggers()`:**
     *   Select `setupTriggers` from the function dropdown. Click "Run".
@@ -261,7 +263,8 @@ Run these functions from `Setup.gs` in the specified order:
         ```
         Replace the placeholder with your actual Web App URL.
     *   Select `runCreateWebhookHelper` from the function dropdown and click "Run".
-    *   Check the dialog box or execution logs for a success message. This will subscribe to both `invitee.created` and `invitee.canceled` events.
+    *   Check the Apps Script execution logs (View > Logs in the editor) and/or the 'Logs' sheet (if configured) for a success or error message from this function. It will no longer display a dialog box.
+    *   Note: 'Programmatic - Recommended' means running this function (typically via the `runCreateWebhookHelper`) manually from the Apps Script editor. It automates the webhook creation with Calendly but is not a fully autonomous, hands-off step.
 *   **Manual Setup Alternative:** You can also set up webhooks manually in Calendly's UI. Point it to your Web App URL and select the `invitee.created` and `invitee.canceled` events. If Calendly provides a signing key during this manual setup, you should update `CONFIG.CALENDLY_SIGNING_KEY` in `Config.gs` with that key for more meaningful signature logging/verification.
 
 ## Example Scenario
