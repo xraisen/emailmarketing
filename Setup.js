@@ -265,9 +265,17 @@ function getCalendlyOrganizationUri() {
  * @param {string} webAppUrl The URL of the deployed Google Apps Script web app.
  * @return {boolean} True if successful, false otherwise.
  */
-function createCalendlyWebhookSubscription(webAppUrl) {
+function createCalendlyWebhookSubscription() {
+  const webAppUrl = ScriptApp.getService().getUrl();
   const apiToken = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN;
   const orgUri = CONFIG.ORGANIZATION_URI;
+
+  if (!webAppUrl || typeof webAppUrl !== 'string' || !webAppUrl.startsWith('https://script.google.com/')) {
+    const msg = 'Error: Could not get valid Web App URL. The script must be deployed as a web app first.';
+    console.error(msg);
+    logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
+    return false;
+  }
 
   if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME') {
     const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.gs. Please update it with your actual token first.';
@@ -278,13 +286,6 @@ function createCalendlyWebhookSubscription(webAppUrl) {
 
   if (!orgUri || orgUri === 'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME') {
     const msg = 'Error: ORGANIZATION_URI is not set in Config.gs. Please run getCalendlyOrganizationUri() and update Config.gs first.';
-    console.error(msg);
-    logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
-    return false;
-  }
-
-  if (!webAppUrl || typeof webAppUrl !== 'string' || !webAppUrl.startsWith('https://script.google.com/')) {
-    const msg = 'Error: webAppUrl parameter is required and must be a valid Apps Script Web App URL.';
     console.error(msg);
     logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
     return false;
@@ -316,6 +317,11 @@ function createCalendlyWebhookSubscription(webAppUrl) {
       console.log(successMsg);
       logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS');
       return true;
+    } else if (responseCode === 409) { // 409 Conflict means the hook already exists, which is acceptable
+      const successMsg = 'Calendly webhook subscription already exists for this URL. Response: ' + responseBody;
+      console.log(successMsg);
+      logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS');
+      return true;
     } else {
       const errorMsg = 'Error creating Calendly webhook subscription. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your token and Org URI in Config.gs are correct and the Web App URL is valid.';
       console.error(errorMsg);
@@ -340,7 +346,7 @@ function createCalendlyWebhookSubscription(webAppUrl) {
 // 5. Select 'runCreateWebhookHelper' from the function dropdown and click 'Run'.
 // Failure to replace the placeholder URL will result in an error.
 function runCreateWebhookHelper() {
-  const webAppUrl = "YOUR_DEPLOYED_WEB_APP_URL_HERE"; // <-- REPLACE THIS WITH YOUR ACTUAL WEB APP URL
+  const webAppUrl = "https://script.google.com/macros/s/AKfycbzPi1BJmoQH-mCIXsnLygK4JfmI7EB5CKJbSwTcg-k_c8pxJO8Ave1P2THGCWTaxQGwfA/exec"; // <-- REPLACE THIS WITH YOUR ACTUAL WEB APP URL
 
   if (webAppUrl === "YOUR_DEPLOYED_WEB_APP_URL_HERE" || !webAppUrl.startsWith("https://script.google.com/")) {
     console.error("ERROR in runCreateWebhookHelper: The webAppUrl is still the placeholder or invalid. Please edit Setup.js and replace 'YOUR_DEPLOYED_WEB_APP_URL_HERE' with your actual deployed Web App URL.");
