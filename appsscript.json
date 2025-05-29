@@ -1,6 +1,5 @@
 {
-  "timeZone": "Asia/Calcutta",
-  "runtimeVersion": "V8",
+  "timeZone": "Asia/Kolkata",
   "dependencies": {
     "enabledAdvancedServices": [
       {
@@ -12,6 +11,11 @@
         "userSymbol": "Drive",
         "serviceId": "drive",
         "version": "v2"
+      },
+      {
+        "userSymbol": "Sheets",
+        "version": "v4",
+        "serviceId": "sheets"
       }
     ],
     "libraries": [
@@ -28,9 +32,15 @@
     ]
   },
   "webapp": {
-    "access": "ANYONE",
-    "executeAs": "USER_ACCESSING"
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE_ANONYMOUS"
   },
   "exceptionLogging": "STACKDRIVER",
-  "oauthScopes": ["https://www.googleapis.com/auth/gmail.send"]
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp"
+  ],
+  "runtimeVersion": "V8"
 }

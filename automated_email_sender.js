@@ -105,8 +105,10 @@ function sendEmail(to, subject, body, leadId) {
 function getColumnIndexMap(headerRowArray) {
   const map = {};
   headerRowArray.forEach((columnName, index) => {
-    map[columnName] = index;
+    map[columnName.trim()] = index; // Added trim() for robustness
   });
+  return map; 
+} 
 /**
  * Processes a batch of leads from the 'Leads' sheet, sending initial emails.
  * Respects daily quotas and batch sizes defined in CONFIG.
@@ -204,12 +206,8 @@ function dailyEmailBatch() {
     logAction('DailyBatchEnd', null, null, `Daily email batch process finished. Emails sent in this run: ${emailsSentThisExecution}`, 'INFO');
     console.log(`Daily email batch finished. Total emails sent in this run: ${emailsSentThisExecution}`);
 
-  } catch (e) {
-      logAction('DailyBatchEnd', null, null, `Daily email batch process finished. Emails sent in this run: ${emailsSentThisExecution}`, 'INFO');
-      console.log(`Daily email batch finished. Total emails sent in this run: ${emailsSentThisExecution}`);
-
-    } catch (e) {
-      const errorMessage = `Error in dailyEmailBatch: ${e.message} ${e.stack}`;
+    } catch (e) { // This is the single, correct catch block for critical errors
+      const errorMessage = `Error in dailyEmailBatch: ${e.message} ${e.stack ? ' Stack: ' + e.stack : ''}`;
       logAction('DailyBatchCriticalError', null, null, errorMessage, 'CRITICAL');
       console.error(errorMessage);
     } finally {
@@ -340,12 +338,9 @@ function processReplies() {
           thread.markRead(); 
       }
     } // End of threads loop
-
-  } catch (e) {
-      logAction('ProcessRepliesEnd', null, null, 'Hourly reply processing finished.', 'INFO');
-
-    } catch (e) {
-      const errorMessage = `Error in processReplies: ${e.message} ${e.stack}`;
+    logAction('ProcessRepliesEnd', null, null, 'Hourly reply processing finished.', 'INFO');
+    } catch (e) { // This is the single, correct catch block for critical errors
+      const errorMessage = `Error in processReplies: ${e.message} ${e.stack ? ' Stack: ' + e.stack : ''}`;
       logAction('ProcessRepliesCriticalError', null, null, errorMessage, 'CRITICAL');
       console.error(errorMessage);
     } finally {

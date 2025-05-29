@@ -223,58 +223,39 @@ function setupTriggers() {
  * @return {string|null} The Organization URI or null if an error occurs.
  */
 function getCalendlyOrganizationUri() {
-  // Retrieve token from Config.gs
-  const apiToken = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN;
-
-  if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME') {
-    const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.gs. Please update it with your actual token first.';
-    console.error(msg);
-    SpreadsheetApp.getUi().alert('Setup Error', msg, SpreadsheetApp.getUi().ButtonSet.OK);
-    return null;
-  }
-
-  try {
-    const response = UrlFetchApp.fetch('https://api.calendly.com/users/me', {
-      method: 'get', // Explicitly 'get', though it's default
-      headers: {
-        'Authorization': 'Bearer ' + apiToken,
-        'Content-Type': 'application/json'
-      },
-      muteHttpExceptions: true 
-    });
-
-    const responseCode = response.getResponseCode();
-    const responseBody = response.getContentText();
-
-    if (responseCode === 200) {
-      const jsonResponse = JSON.parse(responseBody);
-      // Use data.resource.organization as per user's latest example
-      const orgUri = jsonResponse.resource.organization; 
-      
-      if (orgUri) {
-        const successMsg = 'Successfully retrieved Organization URI: ' + orgUri + '\n\nPlease COPY this URI and PASTE it into the CONFIG.ORGANIZATION_URI field in your Config.gs file.';
-        console.log(successMsg);
-        // Using alert to make sure user sees it, as logs can be missed.
-        SpreadsheetApp.getUi().alert('Organization URI Fetched!', successMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-        return orgUri;
-      } else {
-        const errorMsg = 'Error: Organization URI not found in API response. Response body: ' + responseBody;
-        console.error(errorMsg);
-        SpreadsheetApp.getUi().alert('API Error', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-        return null;
-      }
-    } else {
-      const errorMsg = 'Error getting Calendly Organization URI. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your CALENDLY_PERSONAL_ACCESS_TOKEN in Config.gs is correct and valid.';
-      console.error(errorMsg);
-      SpreadsheetApp.getUi().alert('API Error', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-      return null;
+  const token = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN; // Ensure this is defined
+  const url = 'https://api.calendly.com/users/me';
+  const options = {
+    headers: {
+      'Authorization': `Bearer ${token}`
     }
-  } catch (e) {
-    const errorMsg = 'Exception in getCalendlyOrganizationUri: ' + e.toString() + (e.stack ? '\nStack: ' + e.stack : '');
-    console.error(errorMsg);
-    SpreadsheetApp.getUi().alert('Exception', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-    return null;
+  };
+  
+  // Fetch and parse the API response
+  const response = UrlFetchApp.fetch(url, options);
+  const data = JSON.parse(response.getContentText());
+  
+  // Access the URI correctly
+  const orgUri = data.resource.current_organization;
+  
+  if (orgUri) {
+    // Log the result
+    Logger.log(`Your Organization URI is: ${orgUri}`);
+    
+    // Optionally write to a spreadsheet
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); // Ensure SPREADSHEET_ID is defined
+    const sheet = ss.getSheetByName('Config'); // Adjust sheet name as needed
+    if (sheet) {
+      sheet.getRange('A1').setValue(orgUri); // Adjust cell as needed
+    }
+  } else {
+    // Log the error instead of using getUi()
+    Logger.log('Error: Organization URI not found in API response');
+    Logger.log(response.getContentText());
+    throw new Error('Organization URI not found');
   }
+  
+  return orgUri;
 }
 
 /**

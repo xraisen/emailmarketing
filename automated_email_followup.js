@@ -109,12 +109,8 @@ function followUpEmails() {
     logAction('FollowUpBatchEnd', null, null, `Follow-up email batch process finished. Emails sent in this run: ${emailsSentThisExecution}`, 'INFO');
     console.log(`Follow-up email batch finished. Total emails sent in this run: ${emailsSentThisExecution}`);
 
-  } catch (e) {
-      logAction('FollowUpBatchEnd', null, null, `Follow-up email batch process finished. Emails sent in this run: ${emailsSentThisExecution}`, 'INFO');
-      console.log(`Follow-up email batch finished. Total emails sent in this run: ${emailsSentThisExecution}`);
-
-    } catch (e) {
-      const errorMessage = `Error in followUpEmails: ${e.message} ${e.stack}`;
+    } catch (e) { // This is the single, correct catch block for critical errors
+      const errorMessage = `Error in followUpEmails: ${e.message} ${e.stack ? ' Stack: ' + e.stack : ''}`;
       logAction('FollowUpCriticalError', null, null, errorMessage, 'CRITICAL');
       console.error(errorMessage);
     } finally {
@@ -221,12 +217,8 @@ function cleanupLeads() {
     logAction('CleanupLeadsEnd', null, null, `Cleanup leads process finished. Leads marked abandoned: ${leadsAbandonedThisRun}`, 'INFO');
     console.log(`Cleanup leads process finished. Total leads marked abandoned in this run: ${leadsAbandonedThisRun}`);
 
-  } catch (e) {
-      logAction('CleanupLeadsEnd', null, null, `Cleanup leads process finished. Leads marked abandoned: ${leadsAbandonedThisRun}`, 'INFO');
-      console.log(`Cleanup leads process finished. Total leads marked abandoned in this run: ${leadsAbandonedThisRun}`);
-
-    } catch (e) {
-      const errorMessage = `Error in cleanupLeads: ${e.message} ${e.stack}`;
+    } catch (e) { // This is the single, correct catch block for critical errors
+      const errorMessage = `Error in cleanupLeads: ${e.message} ${e.stack ? ' Stack: ' + e.stack : ''}`;
       logAction('CleanupLeadsCriticalError', null, null, errorMessage, 'CRITICAL');
       console.error(errorMessage);
     } finally {
