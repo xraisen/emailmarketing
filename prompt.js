@@ -280,15 +280,9 @@
 
 // File: prompt.gs - AI system prompts
 
-// const INITIAL_EMAIL_PROMPT_TEMPLATE = "Write a unique 2-line email to ${firstName} about ${lastService}. Offer a free audit. Vary tone (e.g., professional, friendly, urgent) and phrasing for randomness. Keep it human, concise, and professional. Include \"Reply STOP to unsubscribe\" at the end."; // OLD
-// const FOLLOW_UP_EMAIL_PROMPT_TEMPLATE = "Write a unique 2-line follow-up email to ${firstName} about ${lastService}. Remind them of the free audit. Vary tone and phrasing, distinct from the initial email. Keep it human, concise, and professional. Include \"Reply STOP to unsubscribe\" at the end."; // OLD
-// const INITIAL_EMAIL_PROMPT_TEMPLATE = "Write a unique 2-line email to ${firstName} about ${lastService}. Offer a free audit. Vary tone (e.g., professional, friendly, urgent) and phrasing for randomness. Keep it human, concise, and professional. Include \"Reply STOP to unsubscribe\" at the end."; // OLD
-// const FOLLOW_UP_EMAIL_PROMPT_TEMPLATE = "Write a unique 2-line follow-up email to ${firstName} about ${lastService}. Remind them of the free audit. Vary tone and phrasing, distinct from the initial email. Keep it human, concise, and professional. Include \"Reply STOP to unsubscribe\" at the end."; // OLD
+const INITIAL_EMAIL_PROMPT_TEMPLATE = "You are an AI assistant generating a plain text email. Adhere to Plain Text Email Formatting Standards.\n\nThe email should be very brief (e.g., 2-3 short sentences). Personalize with '${firstName}'.\nGenerate a subject line like 'Offer: Free Audit for ${lastService}'. This subject should be complete. Note that the system may programmatically add a prefix (e.g., a specific project tag, or 'RE:') to the subject you generate. Do not add such prefixes yourself.\nBody: Briefly introduce the free audit for ${lastService}, highlighting its value. Maintain a human, concise, and professional tone. Use short paragraphs. Ensure the call to action is clear.\nVary tone (e.g., professional, friendly, urgent) and phrasing for randomness.\n\nConclude the email with the following structure, exactly as specified, including the blank line before the footer:\n${emailClosing}\n${signatureName}\n${signatureTitleIfAny}${signatureCompanyIfAny}\n\n${emailFooter}";
 
-const YOUR_NAME_FOR_INITIAL_EMAIL = "Jose"; // As per instruction for now
-const YOUR_NAME_FOR_FOLLOWUP_EMAIL = "Jose"; // As per instruction for now
-const YOUR_NAME_FOR_INITIAL_EMAIL = "Jose"; // As per instruction for now
-const YOUR_NAME_FOR_FOLLOWUP_EMAIL = "Jose"; // As per instruction for now
+const FOLLOW_UP_EMAIL_PROMPT_TEMPLATE = "You are an AI assistant generating a plain text follow-up email. Adhere to Plain Text Email Formatting Standards.\n\nThe email should be very brief (e.g., 2-3 short sentences). Personalize with '${firstName}'.\nGenerate a subject line like 'Follow-up: Free Audit for ${lastService}'. This subject should be complete. Note that the system may programmatically add a prefix (e.g., a specific project tag, or 'RE:') to the subject you generate. Do not add such prefixes yourself.\nBody: Briefly remind ${firstName} about the free audit for ${lastService} offered previously. Maintain a human, concise, and professional tone, distinct from the initial email. Use short paragraphs. Ensure the call to action is clear.\nVary tone and phrasing.\n\nConclude the email with the following structure, exactly as specified, including the blank line before the footer:\n${emailClosing}\n${signatureName}\n${signatureTitleIfAny}${signatureCompanyIfAny}\n\n${emailFooter}";
 
 /**
  * Generates the prompt for an initial email.
@@ -297,16 +291,19 @@ const YOUR_NAME_FOR_FOLLOWUP_EMAIL = "Jose"; // As per instruction for now
  * @return {string} The formatted prompt string.
  */
 function getInitialEmailPrompt(firstName, lastService) {
-  // New prompt based on revised instructions
-  return `Write a unique, extremely concise (2-4 sentences total) cold email to ${firstName} about ${lastService}. Offer a free audit.
-Start with "Hi ${firstName},".
-Focus on being helpful and providing clear value regarding the free audit.
-Avoid using overly salesy language, hype, or common spam-trigger words (e.g., 'guaranteed', 'urgent action required', 'limited time').
-If the email content forms more than one paragraph, ensure paragraphs are separated by a blank line (a double newline).
-Keep sentences and paragraphs concise for easy reading in plain text.
-Maintain a professional and friendly tone. Vary phrasing for randomness. Keep it human and professional.
-End the email content with a suitable closing like 'Best regards,' or 'Thanks,' then on the next line, the name "${YOUR_NAME_FOR_INITIAL_EMAIL}".
-Do NOT add any unsubscribe footer; the system will append it.`;
+  // Assuming CONFIG is globally accessible here or passed in. For this context, we'll assume global.
+  const signatureTitleIfAny = CONFIG.SIGNATURE_TITLE ? CONFIG.SIGNATURE_TITLE + '\n' : '';
+  const signatureCompanyIfAny = CONFIG.SIGNATURE_COMPANY ? CONFIG.SIGNATURE_COMPANY + '\n' : '';
+
+  return INITIAL_EMAIL_PROMPT_TEMPLATE
+    .replace('${firstName}', firstName)
+    .replace('${lastService}', lastService)
+    .replace('${subjectPrefix}', CONFIG.SUBJECT_PREFIX || '') // Ensure empty string if undefined
+    .replace('${emailClosing}', CONFIG.EMAIL_CLOSING)
+    .replace('${signatureName}', CONFIG.SIGNATURE_NAME)
+    .replace('${signatureTitleIfAny}', signatureTitleIfAny)
+    .replace('${signatureCompanyIfAny}', signatureCompanyIfAny)
+    .replace('${emailFooter}', CONFIG.EMAIL_FOOTER);
 }
 
 function getServiceClassificationPrompt(replyText, leadFirstName, serviceProfile, interactionHistorySummary) { // Added interactionHistorySummary
@@ -355,7 +352,17 @@ Respond in JSON format with the following structure:
 // or expect it to be appended by the calling function.
 // The issue description shows "${CONFIG.EMAIL_FOOTER}" directly in the prompt.
 
-function getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) { // Added interactionHistorySummary
+function getContextualFollowUpPrompt(
+  classifiedData,
+  leadFirstName,
+  yourName, // This is CONFIG.SIGNATURE_NAME
+  serviceProfile,
+  interactionHistorySummary,
+  emailClosing, // New: CONFIG.EMAIL_CLOSING
+  signatureTitle, // New: CONFIG.SIGNATURE_TITLE (could be empty)
+  signatureCompany, // New: CONFIG.SIGNATURE_COMPANY (could be empty)
+  emailFooter // New: CONFIG.EMAIL_FOOTER
+) {
   let relevantServiceDetails = "";
   if (classifiedData && classifiedData.identified_services && classifiedData.identified_services.length > 0) {
     relevantServiceDetails = classifiedData.identified_services.map(serviceName => {
@@ -381,7 +388,17 @@ ${interactionHistorySummary}
 I previously sent a cold email to ${leadFirstName}.
 `;
 
+  // Construct the signature block for the prompt's instruction section
+  let signatureBlockInstruction = `${emailClosing}\n${yourName}`;
+  if (signatureTitle) {
+    signatureBlockInstruction += `\n${signatureTitle}`;
+  }
+  if (signatureCompany) {
+    signatureBlockInstruction += `\n${signatureCompany}`;
+  }
+
   return `
+You are an AI assistant generating a plain text follow-up email. Adhere to Plain Text Email Formatting Standards.
 ${historyPromptSection}
 Based on their LATEST reply, ${leadFirstName} seems interested in: ${identifiedServicesText}.
 Their specific concerns/questions from the LATEST reply are: ${keyConcernsText}.
@@ -391,21 +408,18 @@ My relevant expertise includes:
 ${relevantServiceDetails}
 
 Write a helpful, expert-toned follow-up email to ${leadFirstName}.
-Maintain a professional, consultative, and trustworthy tone throughout. The goal is to be genuinely helpful and demonstrate expertise based *only* on the information provided.
-Do NOT use spammy phrases, hype, exaggerated claims, or excessive exclamation marks. Avoid creating a sense of false urgency or making unrealistic promises.
+Generate a clear and relevant subject line, for example: "Following up on your inquiry about [Service/Topic]". This subject should be complete. Note that the system may programmatically add a prefix (e.g., a specific project tag, or 'RE:') to the subject you generate. Do not add such prefixes yourself.
+Use a personalized salutation (e.g., "Hi ${leadFirstName},").
+Acknowledge their LATEST reply and specific concerns using short paragraphs and simple, direct language.
+If there's relevant history, subtly weave it in to show you remember them (e.g., "Following up on our previous discussion about X...").
+Briefly explain how I can help with the identified service(s)/concerns from their latest reply, drawing from my expertise and clearly stating the value.
+Suggest a meeting and state that you will provide the appropriate Calendly link using its full URL (e.g., "You can book a time here: https://calendly.com/your-link/meeting-type").
+The email should be concise, professional, encouraging, and avoid spammy language or excessive capitalization.
 
-Start with "Hi ${leadFirstName},".
-Separate all paragraphs with a blank line (a double newline). Use short paragraphs (1-3 sentences).
-If you include a list, use hyphenated bullet points (e.g., "- Item 1"), with each item on a new line. Ensure a blank line before and after the list if it's between paragraphs.
+Conclude the email with the following structure, exactly as specified, including the blank line before the footer:
+${signatureBlockInstruction}
 
-Acknowledge their LATEST reply and specific concerns.
-If there's relevant history, subtly weave it in to show you remember them (e.g., "Following up on our previous discussion about X..."). If their latest reply introduces a new topic clearly distinct from the history, a brief acknowledgment of this shift can be good before addressing the new points.
-Base your explanation of how you can help strictly on the prospect's `classifiedData` (their needs and concerns) and the service descriptions in your `serviceProfile`. Do not offer services, suggest solutions, or make claims not directly supported by these inputs.
-Briefly explain how I can help with the identified service(s)/concerns from their latest reply, drawing from my expertise.
-When you suggest a meeting, clearly state that a Calendly link will be provided by the system. Ensure this call to action (mentioning the system will provide the link) is distinct, perhaps as its own paragraph or clearly separated.
-The email should be concise, professional, and encouraging.
-End your response with the closing "Looking forward to helping out," (or a similar suitable professional closing), and on the next line, just the name "${yourName}".
-Do NOT add any unsubscribe footer or any other text after your name; the system will append the necessary footer and meeting link.
+${emailFooter}
   `;
 }
 
@@ -416,13 +430,17 @@ Do NOT add any unsubscribe footer or any other text after your name; the system 
  * @return {string} The formatted prompt string.
  */
 function getFollowUpEmailPrompt(firstName, lastService) {
-  // New prompt based on revised instructions for getFollowUpEmailPrompt
-  return `Write a unique, extremely concise (2-4 sentences total) follow-up email to ${firstName} about ${lastService}. Remind them of the free audit.
-Start with "Hi ${firstName},".
-The reminder should be gentle and value-focused.
-Avoid language that sounds demanding. Do not use spam-trigger words (e.g., 'last chance', 'don't miss out', 'act now'). Focus on being helpful and maintaining a professional, friendly tone.
-If the email content forms more than one paragraph, ensure paragraphs are separated by a blank line (a double newline).
-Keep sentences and paragraphs concise. Vary tone and phrasing, distinct from the initial email.
-End the email content with a suitable closing like 'Best regards,' or 'Thanks,' then on the next line, the name "${YOUR_NAME_FOR_FOLLOWUP_EMAIL}".
-Do NOT add any unsubscribe footer; the system will append it.`;
+  // Assuming CONFIG is globally accessible here or passed in. For this context, we'll assume global.
+  const signatureTitleIfAny = CONFIG.SIGNATURE_TITLE ? CONFIG.SIGNATURE_TITLE + '\n' : '';
+  const signatureCompanyIfAny = CONFIG.SIGNATURE_COMPANY ? CONFIG.SIGNATURE_COMPANY + '\n' : '';
+
+  return FOLLOW_UP_EMAIL_PROMPT_TEMPLATE
+    .replace('${firstName}', firstName)
+    .replace('${lastService}', lastService)
+    .replace('${subjectPrefix}', CONFIG.SUBJECT_PREFIX || '') // Ensure empty string if undefined
+    .replace('${emailClosing}', CONFIG.EMAIL_CLOSING)
+    .replace('${signatureName}', CONFIG.SIGNATURE_NAME)
+    .replace('${signatureTitleIfAny}', signatureTitleIfAny)
+    .replace('${signatureCompanyIfAny}', signatureCompanyIfAny)
+    .replace('${emailFooter}', CONFIG.EMAIL_FOOTER);
 }

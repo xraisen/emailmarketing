@@ -14,6 +14,11 @@ const CONFIG = {
 
   USER_TIMEZONE: 'America/New_York', // User MUST provide their IANA timezone. Example: 'America/New_York', 'Europe/London'.
   EMAIL_FOOTER: "Reply STOP to unsubscribe", // Standard email footer.
+  SUBJECT_PREFIX: '', // Optional prefix for email subjects.
+  EMAIL_CLOSING: 'Best regards,', // Default email closing.
+  SIGNATURE_NAME: 'Your Name', // Default sender name for email signature.
+  SIGNATURE_TITLE: '', // Optional sender title for email signature.
+  SIGNATURE_COMPANY: '', // Optional company name for email signature.
   DAILY_EMAIL_QUOTA: 400, // Max initial emails to send per day via dailyEmailBatch.
   EMAIL_BATCH_SIZE: 50, // Number of sheet updates to batch before flushing (affects multiple functions).
 

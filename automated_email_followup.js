@@ -79,21 +79,18 @@ function followUpEmails() {
           //   break; 
           // }
 
-          const aiContent = getAIEmailContent(firstName, lastService, getFollowUpEmailPrompt); // From automated_email_sender.gs (or Utilities if moved)
+          const followUpPromptText = getFollowUpEmailPrompt(firstName, lastService);
+          const aiContent = getAIEmailContent(followUpPromptText); // Corrected call
           if (!aiContent) {
             logAction('FollowUpAIError', leadId, email, 'Failed to generate AI content for follow-up email.', 'ERROR');
             console.error(`AI content generation failed for follow-up: Lead ID ${leadId}, Email: ${email}`);
             continue;
           }
 
-          const subject = `Following up on your Free Audit for ${lastService}`;
-          
-          const formattedAIBody = formatPlainTextEmailBody(aiContent); // Use the new utility
-          // Construct final body: Formatted AI Body + Blank Line + Footer
-          // The AI was prompted to include the call to action for the audit itself.
-          const finalFollowUpEmailBody = formattedAIBody + "\n\n" + CONFIG.EMAIL_FOOTER;
+          const baseSubject = `Following up on your Free Audit for ${lastService}`;
+          const finalSubject = CONFIG.SUBJECT_PREFIX ? CONFIG.SUBJECT_PREFIX + " " + baseSubject : baseSubject; // Use SUBJECT_PREFIX
 
-          if (sendEmail(email, subject, finalFollowUpEmailBody, leadId)) { // From automated_email_sender.gs (or Utilities if moved)
+          if (sendEmail(email, finalSubject, aiContent, leadId)) { // From automated_email_sender.gs (or Utilities if moved)
             sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.FOLLOW_UP_1);
             sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
             emailsSentThisExecution++;
