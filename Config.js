@@ -15,7 +15,47 @@ const CONFIG = {
   USER_TIMEZONE: 'America/New_York', // User MUST provide their IANA timezone. Example: 'America/New_York', 'Europe/London'.
   EMAIL_FOOTER: "Reply STOP to unsubscribe", // Standard email footer.
   DAILY_EMAIL_QUOTA: 400, // Max initial emails to send per day via dailyEmailBatch.
-  EMAIL_BATCH_SIZE: 50 // Number of sheet updates to batch before flushing (affects multiple functions).
+  EMAIL_BATCH_SIZE: 50, // Number of sheet updates to batch before flushing (affects multiple functions).
+
+  AI_SERVICES_PROFILE: {
+    "Google Ads Management": {
+      keywords: ["google ads", "ppc", "adwords", "campaigns", "performance max", "ad spend"],
+      description: "Expert Google Ads management including Search, Display, and Performance Max campaigns, focusing on strategy, optimization, and results.",
+      calendlyLink: "https://calendly.com/jose-ads-gmc/30min"
+    },
+    "GMC/Feed Management": {
+      keywords: ["gmc", "merchant center", "feed disapproval", "product feed", "shopping ads"],
+      description: "Specialized in fixing Google Merchant Center feed disapprovals, optimizing product feeds for better ad placements, and setting up GMC for new stores.",
+      calendlyLink: "https://calendly.com/jose-ads-gmc/30min"
+    },
+    "Web Design & Development": {
+      keywords: ["website", "web design", "web development", "landing page", "cms", "wordpress", "shopify"],
+      description: "Full-stack web design and development, creating responsive websites, high-converting landing pages, and full CMS builds (WordPress, Shopify, custom).",
+      calendlyLink: "https://calendly.com/jose-web-design/30min"
+    },
+    // TODO: Add other core services from your list (Funnels, AI Automation, Tech Strategy)
+    // For now, let's add placeholders for them.
+    "Funnels": {
+      keywords: ["funnels", "sales funnel", "lead generation funnel", "clickfunnels"],
+      description: "Design and implementation of high-converting sales and lead generation funnels.",
+      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link
+    },
+    "AI Automation": {
+      keywords: ["ai automation", "chatbots", "ai agents", "workflow automation"],
+      description: "Implementing AI-driven automation solutions to streamline business processes.",
+      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link
+    },
+    "Tech Strategy": {
+      keywords: ["tech strategy", "digital transformation", "it consulting", "saas integration"],
+      description: "Providing strategic advice on technology adoption and digital transformation.",
+      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link
+    },
+    "Generic Inquiry": { // Fallback
+      keywords: [],
+      description: "General discussion about digital marketing needs and how I can help your business grow.",
+      calendlyLink: CONFIG.CALENDLY_LINK // Default link
+    }
+  }
 };
 
 const LEADS_SHEET_NAME = 'Leads';
