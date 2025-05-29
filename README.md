@@ -332,4 +332,48 @@ Here's how the system might work for a single lead:
 
 ---
 
+## Testing
+
+The project includes a test suite in `TestFramework.js` to verify core functionality. These tests are designed to be run manually from the Google Apps Script editor.
+
+**To run the tests:**
+
+1.  Open your Google Apps Script project.
+2.  Open the `TestFramework.js` file.
+3.  From the function dropdown menu in the Apps Script editor (it usually says "Select function"), choose the test function you want to run (e.g., `testBookingDetection`, `testEmailToProspect`, `testEmailToPR`, `testSlackNotification`).
+4.  Click the "Run" button (looks like a play icon).
+5.  Check the execution logs for test output: Go to "View" > "Logs" (or press `Ctrl+Enter` / `Cmd+Enter`). Each test logs its progress and results, prefixed with `[TEST]`. Look for overall success or failure messages for each test.
+
+**Test Functions Overview:**
+
+*   **`testBookingDetection()`**:
+    *   Simulates a Calendly `invitee.created` webhook.
+    *   Verifies that the test lead's status in the 'Leads' sheet is updated to "BOOKED".
+    *   Mocks `createCalendarEvent` and `sendPRAlert` to prevent actual calendar events or PR alerts.
+
+*   **`testEmailToProspect()`**:
+    *   Tests the generation and "sending" of an initial email to a prospect.
+    *   Mocks the Gemini API call (via `UrlFetchApp.fetch`) to return predefined AI content.
+    *   Mocks `GmailApp.sendEmail` to capture and verify the recipient, subject, and body.
+
+*   **`testEmailToPR()`**:
+    *   Tests the PR email notification functionality.
+    *   Mocks `GmailApp.sendEmail` to capture and verify parameters for the PR email (recipient should be `test@example.com` for the test).
+    *   Mocks `UrlFetchApp.fetch` (for Slack calls within `sendPRAlert`) and `Utilities.formatDate`.
+
+*   **`testSlackNotification()`**:
+    *   Tests the Slack notification functionality.
+    *   Mocks `UrlFetchApp.fetch` to capture and verify the Slack webhook URL and payload.
+    *   Temporarily sets `CONFIG.SLACK_WEBHOOK_URL` to the test URL (`https://hooks.slack.com/services/test/webhook`).
+    *   Mocks `GmailApp.sendEmail` and `Utilities.formatDate`.
+
+**Important Notes for Testing:**
+
+*   The tests use mock data defined within each test function.
+*   `testBookingDetection` will add a test lead (`john.test.booking@example.com`) to your 'Leads' sheet if it doesn't exist. It does not automatically clean up this lead after the test. You may want to manually delete it or adapt the test for cleanup if running repeatedly in a production sheet.
+*   Ensure `CONFIG` values in `Config.js` (like `SPREADSHEET_ID`) are correctly set up, as tests may rely on them to access resources like your Google Sheet.
+*   The tests are designed for a non-production environment or with caution, especially `testBookingDetection` if used with a live 'Leads' sheet.
+
+---
+
 This README provides a comprehensive guide. Remember to carefully replace all placeholder values in `Config.js` with your actual information.
