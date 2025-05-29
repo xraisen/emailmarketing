@@ -49,8 +49,9 @@ Respond in JSON format with the following structure:
 {
   "identified_services": ["Service Name 1", "Service Name 2"],
   "key_concerns": ["Concern 1", "Concern 2"], // From the latest reply
-  "summary_of_need": "A brief summary of what the prospect is asking for in their latest reply.",
-  "sentiment": "positive" // "positive", "neutral", or "negative"
+  "summary_of_need": "A specific and actionable summary of what the prospect is explicitly asking for in their latest reply. Focus on key questions or desired outcomes they've stated.",
+  "sentiment": "positive", // "positive", "neutral", or "negative"
+  "classification_confidence": 0.85 // Your self-assessed confidence (0.0 to 1.0) in the accuracy of identified_services, key_concerns, and summary_of_need based on the reply. Be realistic: use lower scores if the reply is very short, ambiguous, or if your interpretation relies heavily on assumptions.
 }
   `;
 }
@@ -98,7 +99,7 @@ ${relevantServiceDetails}
 
 Write a helpful, expert-toned follow-up email to ${leadFirstName}.
 Acknowledge their LATEST reply and specific concerns.
-If there's relevant history, subtly weave it in to show you remember them (e.g., "Following up on our previous discussion about X...").
+If there's relevant history, subtly weave it in to show you remember them (e.g., "Following up on our previous discussion about X..."). If their latest reply introduces a new topic clearly distinct from the history, a brief acknowledgment of this shift can be good before addressing the new points.
 Briefly explain how I can help with the identified service(s)/concerns from their latest reply, drawing from my expertise.
 Suggest a meeting and state that you will provide the appropriate Calendly link.
 The email should be concise, professional, and encouraging.

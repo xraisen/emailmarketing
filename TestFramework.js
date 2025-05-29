@@ -276,6 +276,13 @@ function runMemoryFeatureTests() {
   test_getLeadInteractionHistory_FullHistory();
   test_processReplies_UsesHistoryForAIClassification();
 
+  // Adding new tests for manual review and negative sentiment paths
+  test_processReplies_lowConfidenceToManualReview();
+  test_processReplies_neutralGenericToManualReview();
+  test_processReplies_positiveGenericToManualReview();
+  test_processReplies_aiGenerationFailureToManualReview();
+  test_processReplies_negativeSentimentToUnqualified();
+
   Logger.log("\n--- Memory Feature Tests Completed ---");
 }
 
@@ -529,6 +536,214 @@ function masterTestRunner() {
   
   runMemoryFeatureTests(); // Run the new suite
   Logger.log("--- MASTER TEST RUNNER COMPLETED ---");
+}
+
+
+// --- Tests for Manual Review and Negative Sentiment Workflows ---
+
+function test_processReplies_lowConfidenceToManualReview() {
+    Logger.log("\nRunning test_processReplies_lowConfidenceToManualReview...");
+    setupTestMocks();
+    const leadId = "LID_LowConfidence"; const leadEmail = "lowconf@example.com"; const leadFirstName = "LowConf";
+    const mockReplyBody = "Maybe interested in something?";
+    const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+    CONFIG.PR_EMAIL = "pr_test@example.com"; // Ensure PR_EMAIL is set for notification test
+
+    MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
+        ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone"],
+        [leadId, leadEmail, leadFirstName, STATUS.SENT, "Some Service", "123"]
+    ]);
+    MockSpreadsheetApp._setSheetData(testSpreadsheetId, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
+    MockGmailApp._addMockThread({ messages: [{ body: mockReplyBody, from: leadEmail, isUnread: true }], queryMatcher: (q) => q.includes("is:unread") });
+
+    const mockGetLIA = mockFunction(this, 'getLeadInteractionHistory', () => "Minimal history.");
+    const mockClassify = mockFunction(this, 'classifyProspectReply', () => ({
+        identified_services: ["Specific Service"], key_concerns: ["Unsure"],
+        summary_of_need: "Possibly needs Specific Service.", sentiment: "neutral", classification_confidence: 0.5 // Low confidence
+    }));
+    const mockGenFollowUp = mockFunction(this, 'generateAIContextualFollowUp', () => "Should not be called");
+    const mockSendToProspect = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
+        if (to === leadEmail) MockGmailApp._lastSentEmail = {to, subject, body, id, type: "prospect"}; // Capture prospect email
+    });
+     mockFunction(this, 'sendPRAlert', () => {}); // No PR alert for manual review
+     mockFunction(this, 'truncateString', (str) => str); // Simple pass-through
+
+
+    if (typeof processReplies === 'function') processReplies();
+    else Logger.log("ERROR: processReplies function not found globally.");
+
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(testSpreadsheetId, LEADS_SHEET_NAME);
+    assertNotNull(lastSetValue, "Sheet status should have been updated");
+    if (lastSetValue) assertEqual(lastSetValue.value, STATUS.NEEDS_MANUAL_REVIEW, "Lead status should be NEEDS_MANUAL_REVIEW");
+    
+    assertEqual(MockGmailApp._lastSentEmail ? MockGmailApp._lastSentEmail.to : null, CONFIG.PR_EMAIL, "Notification email should be sent to PR_EMAIL for manual review.");
+    if (MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === CONFIG.PR_EMAIL) {
+        assertTrue(MockGmailApp._lastSentEmail.subject.includes("Lead Needs Manual Review"), "Manual review email subject is correct.");
+        assertTrue(MockGmailApp._lastSentEmail.body.includes("Low AI classification confidence"), "Manual review email body indicates low confidence.");
+    }
+    
+    let prospectFollowUpSent = false;
+    if (MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === leadEmail) prospectFollowUpSent = true;
+    assertEqual(prospectFollowUpSent, false, "No AI follow-up email should be sent to the prospect.");
+
+    mockGetLIA.restore(); mockClassify.restore(); mockGenFollowUp.restore(); mockSendToProspect.restore();
+    teardownTestMocks();
+}
+
+function test_processReplies_neutralGenericToManualReview() {
+    Logger.log("\nRunning test_processReplies_neutralGenericToManualReview...");
+    setupTestMocks();
+    const leadId = "LID_NeutralGen"; const leadEmail = "neutralgen@example.com"; const leadFirstName = "NeutralGen";
+    CONFIG.PR_EMAIL = "pr_test_ng@example.com";
+
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
+        ["Lead ID", "Email", "First Name", "Status"], [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ]);
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
+    MockGmailApp._addMockThread({ messages: [{ body: "Ok.", from: leadEmail, isUnread: true }], queryMatcher: (q) => q.includes("is:unread") });
+
+    mockFunction(this, 'getLeadInteractionHistory', () => "Some history.");
+    mockFunction(this, 'classifyProspectReply', () => ({
+        identified_services: ["Generic Inquiry"], key_concerns: [],
+        summary_of_need: "Vague reply.", sentiment: "neutral", classification_confidence: 0.9
+    }));
+    mockFunction(this, 'generateAIContextualFollowUp', () => "Should not be called");
+    mockFunction(this, 'sendEmail', (to, subj, body, id) => { MockGmailApp._lastSentEmail = {to, subj, body, id};}); // Capture all emails
+    mockFunction(this, 'sendPRAlert', () => {});
+    mockFunction(this, 'truncateString', (str) => str);
+
+    if (typeof processReplies === 'function') processReplies();
+    else Logger.log("ERROR: processReplies function not found globally.");
+
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME);
+    assertEqual(lastSetValue ? lastSetValue.value : null, STATUS.NEEDS_MANUAL_REVIEW, "Status: NEEDS_MANUAL_REVIEW for Neutral Generic");
+    assertEqual(MockGmailApp._lastSentEmail ? MockGmailApp._lastSentEmail.to : null, CONFIG.PR_EMAIL, "Notification to PR_EMAIL for Neutral Generic");
+    if (MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === CONFIG.PR_EMAIL) {
+      assertTrue(MockGmailApp._lastSentEmail.body.includes("Neutral sentiment for Generic Inquiry"), "Manual review email body indicates neutral generic.");
+    }
+    
+    // Check that no email was sent to prospect by checking if the last email sent was to PR_EMAIL
+    let prospectFollowUpSent = MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === leadEmail;
+    assertEqual(prospectFollowUpSent, false, "No AI follow-up email should be sent to the prospect for Neutral Generic.");
+
+    teardownTestMocks(); // Restores original functions mocked by mockFunction
+}
+
+function test_processReplies_positiveGenericToManualReview() {
+    Logger.log("\nRunning test_processReplies_positiveGenericToManualReview...");
+    setupTestMocks();
+    const leadId = "LID_PositiveGen"; const leadEmail = "positivegen@example.com"; const leadFirstName = "PositiveGen";
+    CONFIG.PR_EMAIL = "pr_test_pg@example.com";
+
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
+        ["Lead ID", "Email", "First Name", "Status"], [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ]);
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
+    MockGmailApp._addMockThread({ messages: [{ body: "Sounds good!", from: leadEmail, isUnread: true }], queryMatcher: (q) => q.includes("is:unread") });
+
+    mockFunction(this, 'getLeadInteractionHistory', () => "History here.");
+    mockFunction(this, 'classifyProspectReply', () => ({
+        identified_services: ["Generic Inquiry"], key_concerns: [],
+        summary_of_need: "Generally positive but vague.", sentiment: "positive", classification_confidence: 0.95
+    }));
+    mockFunction(this, 'generateAIContextualFollowUp', () => "Should not be called");
+    mockFunction(this, 'sendEmail', (to, subj, body, id) => { MockGmailApp._lastSentEmail = {to, subj, body, id};});
+    mockFunction(this, 'sendPRAlert', () => {});
+    mockFunction(this, 'truncateString', (str) => str);
+
+    if (typeof processReplies === 'function') processReplies();
+    else Logger.log("ERROR: processReplies function not found globally.");
+
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME);
+    assertEqual(lastSetValue ? lastSetValue.value : null, STATUS.NEEDS_MANUAL_REVIEW, "Status: NEEDS_MANUAL_REVIEW for Positive Generic");
+    assertEqual(MockGmailApp._lastSentEmail ? MockGmailApp._lastSentEmail.to : null, CONFIG.PR_EMAIL, "Notification to PR_EMAIL for Positive Generic");
+     if (MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === CONFIG.PR_EMAIL) {
+      assertTrue(MockGmailApp._lastSentEmail.body.includes("Not proceeding with AI follow-up"), "Manual review email body indicates positive generic.");
+    }
+    let prospectFollowUpSent = MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === leadEmail;
+    assertEqual(prospectFollowUpSent, false, "No AI follow-up email should be sent to the prospect for Positive Generic.");
+    
+    teardownTestMocks();
+}
+
+function test_processReplies_aiGenerationFailureToManualReview() {
+    Logger.log("\nRunning test_processReplies_aiGenerationFailureToManualReview...");
+    setupTestMocks();
+    const leadId = "LID_AIFail"; const leadEmail = "aifail@example.com"; const leadFirstName = "AIFail";
+    CONFIG.PR_EMAIL = "pr_test_aifail@example.com";
+
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
+        ["Lead ID", "Email", "First Name", "Status"], [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ]);
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
+    MockGmailApp._addMockThread({ messages: [{ body: "Interesting proposal!", from: leadEmail, isUnread: true }], queryMatcher: (q) => q.includes("is:unread") });
+
+    mockFunction(this, 'getLeadInteractionHistory', () => "Some interaction.");
+    mockFunction(this, 'classifyProspectReply', () => ({
+        identified_services: ["Specific Service"], key_concerns: ["Details"],
+        summary_of_need: "Wants details on Specific Service.", sentiment: "positive", classification_confidence: 0.9
+    }));
+    mockFunction(this, 'generateAIContextualFollowUp', () => null); // AI Follow-up generation fails
+    mockFunction(this, 'sendEmail', (to, subj, body, id) => { MockGmailApp._lastSentEmail = {to, subj, body, id};});
+    mockFunction(this, 'sendPRAlert', () => {});
+    mockFunction(this, 'truncateString', (str) => str);
+
+    if (typeof processReplies === 'function') processReplies();
+    else Logger.log("ERROR: processReplies function not found globally.");
+
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME);
+    assertEqual(lastSetValue ? lastSetValue.value : null, STATUS.NEEDS_MANUAL_REVIEW, "Status: NEEDS_MANUAL_REVIEW for AI Gen Failure");
+    assertEqual(MockGmailApp._lastSentEmail ? MockGmailApp._lastSentEmail.to : null, CONFIG.PR_EMAIL, "Notification to PR_EMAIL for AI Gen Failure");
+    if (MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === CONFIG.PR_EMAIL) {
+      assertTrue(MockGmailApp._lastSentEmail.body.includes("AI follow-up generation failed"), "Manual review email body indicates AI generation failure.");
+    }
+    let prospectFollowUpSent = MockGmailApp._lastSentEmail && MockGmailApp._lastSentEmail.to === leadEmail;
+    assertEqual(prospectFollowUpSent, false, "No AI follow-up email should be sent to the prospect for AI Gen Failure.");
+
+    teardownTestMocks();
+}
+
+function test_processReplies_negativeSentimentToUnqualified() {
+    Logger.log("\nRunning test_processReplies_negativeSentimentToUnqualified...");
+    setupTestMocks();
+    const leadId = "LID_Negative"; const leadEmail = "negative@example.com"; const leadFirstName = "NegativeNancy";
+    CONFIG.PR_EMAIL = "pr_test_neg@example.com"; // For consistency, though no PR email expected here
+
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
+        ["Lead ID", "Email", "First Name", "Status"], [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ]);
+    MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
+    MockGmailApp._addMockThread({ messages: [{ body: "Not interested at all.", from: leadEmail, isUnread: true }], queryMatcher: (q) => q.includes("is:unread") });
+    
+    // Clear lastSentEmail before the test action
+    MockGmailApp._lastSentEmail = null;
+
+
+    mockFunction(this, 'getLeadInteractionHistory', () => "Previous positive chat.");
+    mockFunction(this, 'classifyProspectReply', () => ({
+        identified_services: [], key_concerns: ["Not interested"],
+        summary_of_need: "Wants to be removed.", sentiment: "negative", classification_confidence: 0.98
+    }));
+    const mockGenFollowUp = mockFunction(this, 'generateAIContextualFollowUp', () => "Should NOT be called");
+    const mockSendToProspect = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
+        MockGmailApp._lastSentEmail = {to, subject, body, id, type: "prospect_or_pr"};
+    });
+    const mockSendPRAlert = mockFunction(this, 'sendPRAlert', () => {assertTrue(false, "sendPRAlert should not be called for negative sentiment if lead is just unqualified.")}); // Should not be called
+    mockFunction(this, 'truncateString', (str) => str);
+
+    if (typeof processReplies === 'function') processReplies();
+    else Logger.log("ERROR: processReplies function not found globally.");
+
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME);
+    assertEqual(lastSetValue ? lastSetValue.value : null, STATUS.UNQUALIFIED, "Status: UNQUALIFIED for Negative Sentiment");
+    
+    // Assert that NO email was sent (neither to prospect nor to PR_EMAIL for manual review)
+    assertEqual(MockGmailApp._lastSentEmail, null, "No email of any kind should be sent for negative sentiment.");
+
+    mockGenFollowUp.restore(); // Important to restore to avoid interference if generateAIContextualFollowUp is used by other tests
+    mockSendToProspect.restore();
+    mockSendPRAlert.restore();
+    teardownTestMocks();
 }
 
 // To run tests from Apps Script Editor: Select 'masterTestRunner' and click 'Run'.
