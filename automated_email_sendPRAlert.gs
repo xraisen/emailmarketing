@@ -6,25 +6,35 @@
  * @param {string} lastService The last service associated with the lead.
  * @param {string} leadEmail The email address of the lead.
  * @param {string} [leadPhone] The phone number of the lead (optional).
- * @param {string|Date} [bookingTime] The booking time (optional). Formats to string or defaults to 'Pending'.
+ * @param {string|Date} [bookingTime] The booking time (optional). Expected as ISO string or Date object.
  * @param {string} leadId The Lead ID.
  */
 function sendPRAlert(firstName, lastService, leadEmail, leadPhone, bookingTime, leadId) {
   const phoneDisplay = leadPhone || ''; // Default to empty string if null/undefined
   let timeDisplay = 'Pending';
 
+  // CONFIG.USER_TIMEZONE must be a valid IANA timezone string (e.g., 'America/New_York') for Utilities.formatDate.
   if (bookingTime) {
-    if (bookingTime instanceof Date) {
-      // Attempt to format the date, ensuring a valid date object
-      try {
-        // Use a specific timezone if available, otherwise server timezone
-        timeDisplay = Utilities.formatDate(bookingTime, CONFIG.USER_TIMEZONE || Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm z");
-      } catch (e) {
-        timeDisplay = bookingTime.toString(); // Fallback to simple string conversion if formatting fails
-        logAction('PR_ALERT_DATE_FORMAT_WARN', leadId, leadEmail, 'Could not format bookingTime using Utilities.formatDate: ' + e.message, 'WARNING');
+    try {
+      const dateObject = new Date(bookingTime);
+      // Check if dateObject is valid
+      if (!isNaN(dateObject.getTime())) {
+        if (CONFIG.USER_TIMEZONE && CONFIG.USER_TIMEZONE !== 'YOUR_USER_TIMEZONE') {
+          // "yyyy-MM-dd HH:mm z"  e.g., "2023-10-27 10:00 EST"
+          timeDisplay = Utilities.formatDate(dateObject, CONFIG.USER_TIMEZONE, "yyyy-MM-dd HH:mm z");
+        } else {
+          timeDisplay = dateObject.toISOString(); // Fallback to ISO string (UTC) if no timezone in config
+          logAction('PRAlertTimeFormatWarning', leadId, leadEmail, 'CONFIG.USER_TIMEZONE not set or is placeholder. bookingTime shown in UTC (ISO format).', 'WARNING');
+          console.warn('CONFIG.USER_TIMEZONE not set for Lead ID: ' + leadId + '. bookingTime shown in UTC.');
+        }
+      } else {
+        // bookingTime was not a valid date string or object
+        logAction('PRAlertTimeFormatError', leadId, leadEmail, 'Invalid bookingTime received, could not parse to a valid date: ' + bookingTime, 'WARNING');
+        // timeDisplay remains 'Pending' as initialized
       }
-    } else {
-      timeDisplay = bookingTime.toString(); // Ensure it's a string if not a Date object
+    } catch (dateError) {
+      logAction('PRAlertTimeFormatError', leadId, leadEmail, 'Error processing bookingTime (' + bookingTime + '): ' + dateError.message, 'WARNING');
+      // timeDisplay remains 'Pending' as initialized
     }
   }
 

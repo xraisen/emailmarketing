@@ -38,77 +38,95 @@ function doPost(e) {
     // Log only specific, non-sensitive parts of the payload for debugging if necessary
     logAction('CalendlyPayload', null, null, `Payload parsed. Event type: ${payload.event}, Invitee URI: ${payload.payload && payload.payload.uri ? payload.payload.uri : 'N/A'}`, 'DEBUG');
 
+    if (payload.event === 'invitee.canceled') {
+        const canceledInviteeEmail = payload.payload && payload.payload.email ? payload.payload.email : 'N/A';
+        // Attempt to get some unique identifier for the canceled event, if available in payload structure
+        const eventUriParts = payload.payload && payload.payload.uri ? payload.payload.uri.split('/') : [];
+        const eventId = eventUriParts.length > 0 ? eventUriParts.pop() : null;
 
-    if (payload.event !== 'invitee.created') {
-        logAction('CalendlyWebhookSkipped', null, null, 'Skipped event type: ' + payload.event, 'INFO');
-        return ContentService.createTextOutput(JSON.stringify({ success: true, message: 'Event skipped, not invitee.created.'})).setMimeType(ContentService.MimeType.JSON);
-    }
+        logAction('CalendlyInviteeCanceled', eventId, canceledInviteeEmail, 
+                  'Received "invitee.canceled" event. Full payload: ' + JSON.stringify(payload.payload), 'INFO');
+        
+        // Future enhancement: Could attempt to find and delete the corresponding Google Calendar event
+        // or update lead status (e.g., to 'CANCELED_BOOKING' or back to 'HOT').
+        // For now, just acknowledging and logging.
 
-    const inviteeEmail = payload.payload && payload.payload.email;
-    const bookingStartTime = payload.payload && payload.payload.scheduled_event && payload.payload.scheduled_event.start_time;
-    const inviteeName = payload.payload && payload.payload.name; // Could be used if needed
+        return ContentService.createTextOutput(JSON.stringify({ 
+          success: true, 
+          message: 'Event "invitee.canceled" acknowledged and logged.'
+        })).setMimeType(ContentService.MimeType.JSON);
 
-    if (!inviteeEmail || !bookingStartTime) {
-      const errorDetail = `Missing essential fields in payload. Email: ${inviteeEmail || 'Not Provided'}, StartTime: ${bookingStartTime || 'Not Provided'}`;
-      logAction('CalendlyWebhookError', null, inviteeEmail, errorDetail, 'ERROR');
-      return ContentService.createTextOutput(JSON.stringify({ error: 'Missing required payload fields (email, start_time)' })).setMimeType(ContentService.MimeType.JSON);
-    }
+    } else if (payload.event === 'invitee.created') {
+        const inviteeEmail = payload.payload && payload.payload.email;
+        const bookingStartTime = payload.payload && payload.payload.scheduled_event && payload.payload.scheduled_event.start_time;
+        // const inviteeName = payload.payload && payload.payload.name; // inviteeName is available if needed
 
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
-    if (!sheet) {
-        logAction('CalendlyWebhookError', null, inviteeEmail, `Sheet ${LEADS_SHEET_NAME} not found.`, 'ERROR');
-        return ContentService.createTextOutput(JSON.stringify({ error: `Sheet ${LEADS_SHEET_NAME} not found.` })).setMimeType(ContentService.MimeType.JSON);
-    }
-    
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const columnIndexMap = getColumnIndexMap(headers); // From Utilities.gs
-    
-    // Check for required columns
-    const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
-    for (const col of requiredSheetColumns) {
-        if (columnIndexMap[col] === undefined) {
-            logAction('CalendlyWebhookError', null, inviteeEmail, `Required column '${col}' not found in sheet.`, 'ERROR');
-            return ContentService.createTextOutput(JSON.stringify({ error: `Sheet configuration error: Missing column '${col}'` })).setMimeType(ContentService.MimeType.JSON);
+        if (!inviteeEmail || !bookingStartTime) {
+          const errorDetail = `Missing essential fields in payload for invitee.created. Email: ${inviteeEmail || 'Not Provided'}, StartTime: ${bookingStartTime || 'Not Provided'}`;
+          logAction('CalendlyWebhookError', null, inviteeEmail, errorDetail, 'ERROR');
+          return ContentService.createTextOutput(JSON.stringify({ error: 'Missing required payload fields (email, start_time) for invitee.created' })).setMimeType(ContentService.MimeType.JSON);
         }
-    }
 
-    const leadDataRange = sheet.getRange(2, 1, sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 1, sheet.getLastColumn());
-    const leadDataRows = sheet.getLastRow() > 1 ? leadDataRange.getValues() : [];
-
-
-    let leadFound = false;
-    for (let i = 0; i < leadDataRows.length; i++) {
-      const row = leadDataRows[i];
-      const currentEmail = row[columnIndexMap['Email']];
-
-      if (currentEmail && typeof currentEmail === 'string' && currentEmail.toLowerCase() === inviteeEmail.toLowerCase()) {
-        leadFound = true;
-        const actualSheetRow = i + 2; // +1 for 0-based index, +1 for header row
+        const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+        const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
+        if (!sheet) {
+            logAction('CalendlyWebhookError', null, inviteeEmail, `Sheet ${LEADS_SHEET_NAME} not found.`, 'ERROR');
+            return ContentService.createTextOutput(JSON.stringify({ error: `Sheet ${LEADS_SHEET_NAME} not found.` })).setMimeType(ContentService.MimeType.JSON);
+        }
         
-        const leadId = row[columnIndexMap['Lead ID']];
-        const firstName = row[columnIndexMap['First Name']] || inviteeName; // Use sheet data or fallback to Calendly name
-        const lastService = row[columnIndexMap['Last Service']];
-        const phone = row[columnIndexMap['Phone']];
+        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        const columnIndexMap = getColumnIndexMap(headers); // From Utilities.gs
+        
+        const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
+        for (const col of requiredSheetColumns) {
+            if (columnIndexMap[col] === undefined) {
+                logAction('CalendlyWebhookError', null, inviteeEmail, `Required column '${col}' not found in sheet.`, 'ERROR');
+                return ContentService.createTextOutput(JSON.stringify({ error: `Sheet configuration error: Missing column '${col}'` })).setMimeType(ContentService.MimeType.JSON);
+            }
+        }
 
-        sheet.getRange(actualSheetRow, columnIndexMap['Status'] + 1).setValue(STATUS.BOOKED);
-        sheet.getRange(actualSheetRow, columnIndexMap['Last Contact'] + 1).setValue(new Date(bookingStartTime));
-        
-        logAction('CalendlyLeadBooked', leadId, inviteeEmail, 'Lead status updated to BOOKED. Booking time: ' + bookingStartTime, 'SUCCESS');
-        
-        sendPRAlert(firstName, lastService, inviteeEmail, phone, bookingStartTime, leadId); // From automated_email_sendPRAlert.gs
-        
-        SpreadsheetApp.flush(); // Ensure changes are saved immediately
-        return ContentService.createTextOutput(JSON.stringify({ success: true, message: 'Lead updated to BOOKED' })).setMimeType(ContentService.MimeType.JSON);
-      }
-    }
+        const leadDataRange = sheet.getRange(2, 1, sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 1, sheet.getLastColumn());
+        const leadDataRows = sheet.getLastRow() > 1 ? leadDataRange.getValues() : [];
 
-    if (!leadFound) {
-      logAction('CalendlyLeadNotFound', null, inviteeEmail, 'Lead not found in sheet for Calendly booking. Consider adding as new lead.', 'WARNING');
-      // Optional: If lead not found, create a new one or send a different alert.
-      // For now, just log and inform.
-      // sendPRAlert(inviteeName || "Unknown Name", "Calendly Booking", inviteeEmail, null, bookingStartTime, "CALENDLY_NEW_LEAD_" + generateUUID());
-      return ContentService.createTextOutput(JSON.stringify({ success: false, message: 'Lead not found in sheet' })).setMimeType(ContentService.MimeType.JSON);
+        let leadFound = false;
+        for (let i = 0; i < leadDataRows.length; i++) {
+          const row = leadDataRows[i];
+          const currentEmail = row[columnIndexMap['Email']];
+
+          if (currentEmail && typeof currentEmail === 'string' && currentEmail.toLowerCase() === inviteeEmail.toLowerCase()) {
+            leadFound = true;
+            const actualSheetRow = i + 2;
+            
+            const leadId = row[columnIndexMap['Lead ID']];
+            const lastServiceInSheet = row[columnIndexMap['Last Service']];
+            const phoneInSheet = row[columnIndexMap['Phone']];
+            const inviteeFullName = payload.payload.name || row[columnIndexMap['First Name']];
+
+            sheet.getRange(actualSheetRow, columnIndexMap['Status'] + 1).setValue(STATUS.BOOKED);
+            sheet.getRange(actualSheetRow, columnIndexMap['Last Contact'] + 1).setValue(new Date(bookingStartTime));
+            
+            logAction('CalendlyLeadBooked', leadId, inviteeEmail, 'Lead status updated to BOOKED. Booking time: ' + bookingStartTime, 'SUCCESS');
+            
+            sendPRAlert(row[columnIndexMap['First Name']], lastServiceInSheet, inviteeEmail, phoneInSheet, bookingStartTime, leadId);
+            createCalendarEvent(inviteeEmail, inviteeFullName, bookingStartTime, lastServiceInSheet, phoneInSheet, leadId);
+            
+            SpreadsheetApp.flush(); 
+            return ContentService.createTextOutput(JSON.stringify({ success: true, message: 'Lead updated to BOOKED' })).setMimeType(ContentService.MimeType.JSON);
+          }
+        }
+
+        if (!leadFound) {
+          logAction('CalendlyLeadNotFound', null, inviteeEmail, 'Lead not found in sheet for Calendly booking (invitee.created). Consider adding as new lead.', 'WARNING');
+          // sendPRAlert(payload.payload.name || "Unknown Name", "Calendly Booking (New Lead)", inviteeEmail, null, bookingStartTime, "CALENDLY_NEW_LEAD_" + generateUUID());
+          return ContentService.createTextOutput(JSON.stringify({ success: false, message: 'Lead not found in sheet for invitee.created event' })).setMimeType(ContentService.MimeType.JSON);
+        }
+
+    } else {
+        logAction('CalendlyWebhookSkipped', null, null, 'Skipped event type: ' + payload.event + '. Expected "invitee.created" or "invitee.canceled".', 'INFO');
+        return ContentService.createTextOutput(JSON.stringify({ 
+          success: true, 
+          message: 'Event skipped, not "invitee.created" or "invitee.canceled".'
+        })).setMimeType(ContentService.MimeType.JSON);
     }
 
   } catch (error) {
@@ -122,6 +140,51 @@ function doPost(e) {
   } else {
     logAction('CalendlyWebhookLockError', null, (e && e.postData && e.postData.contents && JSON.parse(e.postData.contents).payload ? JSON.parse(e.postData.contents).payload.email : 'Unknown Email'), 'Could not obtain lock for Calendly doPost after 10 seconds. Webhook processing skipped.', 'ERROR');
     return ContentService.createTextOutput(JSON.stringify({ error: 'Server busy, please try again later.' })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Creates a Google Calendar event for a booked audit.
+ * @param {string} email The invitee's email address.
+ * @param {string} name The invitee's name. (Potentially full name from Calendly)
+ * @param {string} startTime ISO string for the event start time.
+ * @param {string} lastService The service the audit is for.
+ * @param {string} [phone] The invitee's phone number (optional).
+ * @param {string} leadId The Lead ID.
+ */
+function createCalendarEvent(email, name, startTime, lastService, phone, leadId) {
+  try {
+    // Ensure CalendarApp is available
+    if (typeof CalendarApp === 'undefined') {
+      logAction('CALENDAR_EVENT_ERROR', leadId, email, 'CalendarApp service not available.', 'ERROR');
+      console.error('CalendarApp service not available for Lead ID: ' + leadId);
+      return;
+    }
+    const calendar = CalendarApp.getDefaultCalendar();
+    const start = new Date(startTime);
+    const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 minutes duration
+    const phoneDisplay = phone || '';
+
+    const eventTitle = `Free Audit with ${name} (${lastService})`;
+    const eventDescription = `Contact: ${email} | ${phoneDisplay}
+Service: ${lastService}
+Lead ID: ${leadId}`;
+    
+    const event = calendar.createEvent(
+      eventTitle,
+      start,
+      end,
+      {
+        description: eventDescription,
+        guests: email,
+        sendInvites: true // Send an invitation to the lead
+      }
+    );
+    logAction('CALENDAR_EVENT_SUCCESS', leadId, email, 'Created calendar event. ID: ' + event.getId(), 'SUCCESS');
+    console.log('Calendar event created for Lead ID: ' + leadId + ', Event ID: ' + event.getId());
+  } catch (e) {
+    logAction('CALENDAR_EVENT_ERROR', leadId, email, 'Error creating calendar event: ' + e.message + (e.stack ? ' Stack: ' + e.stack : ''), 'ERROR');
+    console.error('Error creating calendar event for Lead ID: ' + leadId + '. Error: ' + e.message + (e.stack ? ' Stack: ' + e.stack : ''));
   }
 }
 
