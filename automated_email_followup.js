@@ -87,8 +87,13 @@ function followUpEmails() {
           }
 
           const subject = `Following up on your Free Audit for ${lastService}`;
+          
+          const formattedAIBody = formatPlainTextEmailBody(aiContent); // Use the new utility
+          // Construct final body: Formatted AI Body + Blank Line + Footer
+          // The AI was prompted to include the call to action for the audit itself.
+          const finalFollowUpEmailBody = formattedAIBody + "\n\n" + CONFIG.EMAIL_FOOTER;
 
-          if (sendEmail(email, subject, aiContent, leadId)) { // From automated_email_sender.gs (or Utilities if moved)
+          if (sendEmail(email, subject, finalFollowUpEmailBody, leadId)) { // From automated_email_sender.gs (or Utilities if moved)
             sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.FOLLOW_UP_1);
             sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
             emailsSentThisExecution++;
