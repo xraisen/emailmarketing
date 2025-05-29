@@ -217,25 +217,30 @@ function setupTriggers() {
 }
 
 /**
- * FOR MANUAL EXECUTION: Retrieves the Calendly Organization URI using a Personal Access Token.
- * The user must provide their PAT when running this function.
- * @param {string} apiToken The Calendly Personal Access Token.
+ * FOR MANUAL EXECUTION: Retrieves the Calendly Organization URI using the PAT from Config.gs.
+ * The user must first set CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN in Config.gs.
+ * The output URI should then be copied into CONFIG.ORGANIZATION_URI in Config.gs.
  * @return {string|null} The Organization URI or null if an error occurs.
  */
-function getCalendlyOrganizationUri(apiToken) {
-  if (!apiToken) {
-    console.error('getCalendlyOrganizationUri: apiToken parameter is required.');
-    SpreadsheetApp.getUi().alert('Error', 'apiToken parameter is required for getCalendlyOrganizationUri.', SpreadsheetApp.getUi().ButtonSet.OK);
+function getCalendlyOrganizationUri() {
+  // Retrieve token from Config.gs
+  const apiToken = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN;
+
+  if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME') {
+    const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.gs. Please update it with your actual token first.';
+    console.error(msg);
+    SpreadsheetApp.getUi().alert('Setup Error', msg, SpreadsheetApp.getUi().ButtonSet.OK);
     return null;
   }
+
   try {
     const response = UrlFetchApp.fetch('https://api.calendly.com/users/me', {
-      method: 'get',
+      method: 'get', // Explicitly 'get', though it's default
       headers: {
         'Authorization': 'Bearer ' + apiToken,
         'Content-Type': 'application/json'
       },
-      muteHttpExceptions: true // To get error response content
+      muteHttpExceptions: true 
     });
 
     const responseCode = response.getResponseCode();
@@ -243,41 +248,72 @@ function getCalendlyOrganizationUri(apiToken) {
 
     if (responseCode === 200) {
       const jsonResponse = JSON.parse(responseBody);
-      const orgUri = jsonResponse.resource.current_organization;
-      console.log('Successfully retrieved Organization URI: ' + orgUri);
-      SpreadsheetApp.getUi().alert('Success', 'Organization URI: ' + orgUri, SpreadsheetApp.getUi().ButtonSet.OK);
-      return orgUri;
+      // Use data.resource.organization as per user's latest example
+      const orgUri = jsonResponse.resource.organization; 
+      
+      if (orgUri) {
+        const successMsg = 'Successfully retrieved Organization URI: ' + orgUri + '\n\nPlease COPY this URI and PASTE it into the CONFIG.ORGANIZATION_URI field in your Config.gs file.';
+        console.log(successMsg);
+        // Using alert to make sure user sees it, as logs can be missed.
+        SpreadsheetApp.getUi().alert('Organization URI Fetched!', successMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+        return orgUri;
+      } else {
+        const errorMsg = 'Error: Organization URI not found in API response. Response body: ' + responseBody;
+        console.error(errorMsg);
+        SpreadsheetApp.getUi().alert('API Error', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+        return null;
+      }
     } else {
-      console.error('Error getting Calendly Organization URI. Code: ' + responseCode + ', Body: ' + responseBody);
-      SpreadsheetApp.getUi().alert('Error', 'Failed to get Organization URI. Code: ' + responseCode + '. Check logs.', SpreadsheetApp.getUi().ButtonSet.OK);
+      const errorMsg = 'Error getting Calendly Organization URI. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your CALENDLY_PERSONAL_ACCESS_TOKEN in Config.gs is correct and valid.';
+      console.error(errorMsg);
+      SpreadsheetApp.getUi().alert('API Error', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
       return null;
     }
   } catch (e) {
-    console.error('Exception in getCalendlyOrganizationUri: ' + e.toString() + (e.stack ? '\nStack: ' + e.stack : ''));
-    SpreadsheetApp.getUi().alert('Exception', 'Error: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    const errorMsg = 'Exception in getCalendlyOrganizationUri: ' + e.toString() + (e.stack ? '\nStack: ' + e.stack : '');
+    console.error(errorMsg);
+    SpreadsheetApp.getUi().alert('Exception', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
     return null;
   }
 }
 
 /**
- * FOR MANUAL EXECUTION: Creates a Calendly webhook subscription.
- * The user must provide their PAT, Organization URI, and the deployed Web App URL when running this.
- * @param {string} apiToken The Calendly Personal Access Token.
- * @param {string} organizationUri The Calendly Organization URI.
+ * FOR MANUAL EXECUTION: Creates a Calendly webhook subscription using credentials from Config.gs.
+ * User must first set CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN and run getCalendlyOrganizationUri()
+ * to set CONFIG.ORGANIZATION_URI in Config.gs.
  * @param {string} webAppUrl The URL of the deployed Google Apps Script web app.
  * @return {boolean} True if successful, false otherwise.
  */
-function createCalendlyWebhookSubscription(apiToken, organizationUri, webAppUrl) {
-  if (!apiToken || !organizationUri || !webAppUrl) {
-    console.error('createCalendlyWebhookSubscription: apiToken, organizationUri, and webAppUrl parameters are required.');
-     SpreadsheetApp.getUi().alert('Error', 'apiToken, organizationUri, and webAppUrl are required.', SpreadsheetApp.getUi().ButtonSet.OK);
+function createCalendlyWebhookSubscription(webAppUrl) {
+  const apiToken = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN;
+  const orgUri = CONFIG.ORGANIZATION_URI;
+
+  if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME') {
+    const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.gs. Please update it with your actual token first.';
+    console.error(msg);
+    SpreadsheetApp.getUi().alert('Setup Error', msg, SpreadsheetApp.getUi().ButtonSet.OK);
     return false;
   }
+
+  if (!orgUri || orgUri === 'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME') {
+    const msg = 'Error: ORGANIZATION_URI is not set in Config.gs. Please run getCalendlyOrganizationUri() and update Config.gs first.';
+    console.error(msg);
+    SpreadsheetApp.getUi().alert('Setup Error', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+    return false;
+  }
+
+  if (!webAppUrl || typeof webAppUrl !== 'string' || !webAppUrl.startsWith('https://script.google.com/')) {
+    const msg = 'Error: webAppUrl parameter is required and must be a valid Apps Script Web App URL.';
+    console.error(msg);
+    SpreadsheetApp.getUi().alert('Input Error', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+    return false;
+  }
+
   try {
     const payload = {
       url: webAppUrl,
-      events: ['invitee.created'],
-      organization: organizationUri,
+      events: ['invitee.created', 'invitee.canceled'], // Updated event list
+      organization: orgUri,
       scope: 'organization'
     };
     const options = {
@@ -294,18 +330,21 @@ function createCalendlyWebhookSubscription(apiToken, organizationUri, webAppUrl)
     const responseCode = response.getResponseCode();
     const responseBody = response.getContentText();
 
-    if (responseCode === 201) { // 201 Created is success for this endpoint
-      console.log('Successfully created Calendly webhook subscription: ' + responseBody);
-      SpreadsheetApp.getUi().alert('Success', 'Calendly webhook subscription created!', SpreadsheetApp.getUi().ButtonSet.OK);
+    if (responseCode === 201) { // 201 Created is success
+      const successMsg = 'Successfully created Calendly webhook subscription for events: invitee.created, invitee.canceled.\nResponse: ' + responseBody;
+      console.log(successMsg);
+      SpreadsheetApp.getUi().alert('Success!', successMsg, SpreadsheetApp.getUi().ButtonSet.OK);
       return true;
     } else {
-      console.error('Error creating Calendly webhook subscription. Code: ' + responseCode + ', Body: ' + responseBody);
-      SpreadsheetApp.getUi().alert('Error', 'Failed to create webhook. Code: ' + responseCode + '. Response: ' + responseBody + '. Check logs.', SpreadsheetApp.getUi().ButtonSet.OK);
+      const errorMsg = 'Error creating Calendly webhook subscription. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your token and Org URI in Config.gs are correct and the Web App URL is valid.';
+      console.error(errorMsg);
+      SpreadsheetApp.getUi().alert('API Error', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
       return false;
     }
   } catch (e) {
-    console.error('Exception in createCalendlyWebhookSubscription: ' + e.toString() + (e.stack ? '\nStack: ' + e.stack : ''));
-    SpreadsheetApp.getUi().alert('Exception', 'Error: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    const errorMsg = 'Exception in createCalendlyWebhookSubscription: ' + e.toString() + (e.stack ? '\nStack: ' + e.stack : '');
+    console.error(errorMsg);
+    SpreadsheetApp.getUi().alert('Exception', errorMsg, SpreadsheetApp.getUi().ButtonSet.OK);
     return false;
   }
 }
