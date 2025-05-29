@@ -380,24 +380,46 @@ function processReplies() {
             logAction('ProcessRepliesRawClassification', leadId, senderEmail, `Raw AI classification data: ${JSON.stringify(classifiedData)}`, 'INFO');
 
             const sentiment = classifiedData ? classifiedData.sentiment : null; // Get sentiment
+            const confidence = classifiedData ? classifiedData.classification_confidence : null; // Get confidence
             logAction('ProcessRepliesSentiment', leadId, senderEmail, `AI Classified Sentiment: ${sentiment}`, 'INFO');
+            logAction('ProcessRepliesConfidence', leadId, senderEmail, `AI Classification Confidence: ${confidence === null || confidence === undefined ? 'N/A' : confidence.toFixed(2)}`, 'INFO'); // New log
 
             // Handle negative sentiment explicitly first
+            let sendManualReviewNotification = false; // Flag to control single notification
+            let manualReviewReason = "";
+            const LOW_CONFIDENCE_THRESHOLD = 0.70;
+
             if (sentiment === "negative") {
                 logAction('ProcessRepliesNegativeSentiment', leadId, senderEmail, 'Negative sentiment detected by AI. Marking as UNQUALIFIED.', 'INFO');
                 sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
                 sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
                 // No AI follow-up email is sent.
-            } else if (classifiedData && classifiedData.identified_services && classifiedData.identified_services.length > 0 && classifiedData.identified_services[0] !== "Generic Inquiry" && (sentiment === "positive" || sentiment === "neutral")) {
-                // Positive/Specific AI Classification Path & Positive/Neutral Sentiment
+            
+            // New Manual Review Logic
+            } else if (!classifiedData) {
+                sendManualReviewNotification = true;
+                manualReviewReason = "AI classification failed (classifiedData is null).";
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+            } else if (sentiment === "neutral" && classifiedData.identified_services && classifiedData.identified_services.length > 0 && classifiedData.identified_services[0] === "Generic Inquiry") {
+                sendManualReviewNotification = true;
+                manualReviewReason = `Neutral sentiment for Generic Inquiry. Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}. Summary: ${classifiedData.summary_of_need || 'N/A'}`;
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+            } else if (confidence !== null && confidence < LOW_CONFIDENCE_THRESHOLD) {
+                sendManualReviewNotification = true;
+                manualReviewReason = `Low AI classification confidence: ${confidence.toFixed(2)}. Services: ${(classifiedData.identified_services || []).join(', ')}. Summary: ${classifiedData.summary_of_need || 'N/A'}`;
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.NEEDS_MANUAL_REVIEW);
+            
+            // Main AI Follow-up Path (Positive/Neutral sentiment, Specific Service, Sufficient Confidence)
+            } else if (classifiedData.identified_services && classifiedData.identified_services.length > 0 && classifiedData.identified_services[0] !== "Generic Inquiry" && (sentiment === "positive" || sentiment === "neutral")) {
+                // This implies confidence is sufficient or null (treated as sufficient if not low)
+                logAction('ProcessRepliesAILogic', leadId, senderEmail, `Proceeding with AI follow-up. Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}`, 'INFO');
                 // Modified: Call AI Follow-up Generation with history
                 const aiFollowUpBodyRaw = generateAIContextualFollowUp(classifiedData, firstName, YOUR_NAME, AI_SERVICE_PROFILE, interactionHistorySummary);
 
                 if (aiFollowUpBodyRaw) {
                     let chosenCalendlyLink = DEFAULT_CALENDLY_LINK;
-                    const identifiedServices = classifiedData.identified_services; // Already available
+                    const identifiedServices = classifiedData.identified_services; 
 
-                    // Calendly link logic (as implemented in Step 11 - no change needed here based on current diff)
                     if (identifiedServices && identifiedServices.length > 0 && identifiedServices[0] !== "Generic Inquiry") {
                         if (identifiedServices.length === 1) {
                             const serviceName = identifiedServices[0];
@@ -405,27 +427,25 @@ function processReplies() {
                                 chosenCalendlyLink = AI_SERVICE_PROFILE[serviceName].calendlyLink;
                                 logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service identified: ${serviceName}. Using its specific link.`, 'INFO');
                             } else {
-                                logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service identified: ${serviceName}, but no specific link. Using default.`, 'INFO');
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service: ${serviceName}, no specific link. Default.`, 'INFO');
                             }
                         } else { 
                             const servicePriority = ["Web Design & Development", "Google Ads Management", "GMC/Feed Management", "Funnels", "AI Automation", "Tech Strategy"];
                             let foundPriorityLink = false;
                             for (const priorityService of servicePriority) {
-                                if (identifiedServices.includes(priorityService)) {
-                                    if (AI_SERVICE_PROFILE[priorityService] && AI_SERVICE_PROFILE[priorityService].calendlyLink) {
-                                        chosenCalendlyLink = AI_SERVICE_PROFILE[priorityService].calendlyLink;
-                                        logAction('ProcessRepliesCalendly', leadId, senderEmail, `Multiple services identified. Chose link for priority service: ${priorityService}`, 'INFO');
-                                        foundPriorityLink = true;
-                                        break;
-                                    }
+                                if (identifiedServices.includes(priorityService) && AI_SERVICE_PROFILE[priorityService] && AI_SERVICE_PROFILE[priorityService].calendlyLink) {
+                                    chosenCalendlyLink = AI_SERVICE_PROFILE[priorityService].calendlyLink;
+                                    logAction('ProcessRepliesCalendly', leadId, senderEmail, `Multiple services. Priority link for: ${priorityService}`, 'INFO');
+                                    foundPriorityLink = true;
+                                    break;
                                 }
                             }
                             if (!foundPriorityLink) {
-                                logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Multiple services identified. No priority link found or no specific link for priority. Using default.', 'INFO');
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Multiple services. No priority link found. Default.', 'INFO');
                             }
                         }
                     } else { 
-                        logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Generic or no specific service identified by AI. Using default Calendly link.', 'INFO');
+                        logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Generic/no specific service. Default Calendly link.', 'INFO');
                     }
                     
                     const finalAIFollowUpBody = aiFollowUpBodyRaw + `
@@ -436,11 +456,10 @@ Here’s the link to book a meeting: ${chosenCalendlyLink}`;
 
                     if (sendEmail(senderEmail, finalSubject, finalAIFollowUpBody, leadId)) {
                         sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.HOT);
-                        sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
-                        sendPRAlert(firstName, classifiedData.identified_services.join(', '), senderEmail, phone, `HOT - AI Classified (Sentiment: ${sentiment})`, leadId); // Updated PR Alert
-                        logAction('ProcessRepliesAIFollowUpSent', leadId, senderEmail, `AI Follow-up sent (Sentiment: ${sentiment}). Classified: ${classifiedData.identified_services.join(', ')}. Subject: ${subject}`, 'SUCCESS');
+                        sendPRAlert(firstName, classifiedData.identified_services.join(', '), senderEmail, phone, `HOT - AI Classified (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'})`, leadId); 
+                        logAction('ProcessRepliesAIFollowUpSent', leadId, senderEmail, `AI Follow-up sent (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}). Classified: ${classifiedData.identified_services.join(', ')}. Subject: ${subject}`, 'SUCCESS');
                     } else {
-                        logAction('ProcessRepliesAIFollowUpSendError', leadId, senderEmail, `Failed to send AI follow-up (Sentiment: ${sentiment}).`, 'ERROR');
+                        logAction('ProcessRepliesAIFollowUpSendError', leadId, senderEmail, `Failed to send AI follow-up (Sentiment: ${sentiment}, Confidence: ${confidence ? confidence.toFixed(2) : 'N/A'}).`, 'ERROR');
                     }
                 } else {
                     logAction('ProcessRepliesAIGenerationFail', leadId, senderEmail, `AI follow-up generation failed (Sentiment: ${sentiment}). Needs manual review.`, 'ERROR');
