@@ -158,8 +158,11 @@ function getInitialEmailPrompt(firstName, lastService) {
 Start with "Hi ${firstName},".
 Focus on being helpful and providing clear value regarding the free audit.
 Avoid using overly salesy language, hype, or common spam-trigger words (e.g., 'guaranteed', 'urgent action required', 'limited time').
+Focus on being helpful and providing clear value regarding the free audit.
+Avoid using overly salesy language, hype, or common spam-trigger words (e.g., 'guaranteed', 'urgent action required', 'limited time').
 If the email content forms more than one paragraph, ensure paragraphs are separated by a blank line (a double newline).
 Keep sentences and paragraphs concise for easy reading in plain text.
+Maintain a professional and friendly tone. Vary phrasing for randomness. Keep it human and professional.
 Maintain a professional and friendly tone. Vary phrasing for randomness. Keep it human and professional.
 End the email content with a suitable closing like 'Best regards,' or 'Thanks,' then on the next line, the name "${YOUR_NAME_FOR_INITIAL_EMAIL}".
 Do NOT add any unsubscribe footer; the system will append it.`;
@@ -232,6 +235,9 @@ Write a helpful, expert-toned follow-up email to ${leadFirstName}.
 Maintain a professional, consultative, and trustworthy tone throughout. The goal is to be genuinely helpful and demonstrate expertise based *only* on the information provided.
 Do NOT use spammy phrases, hype, exaggerated claims, or excessive exclamation marks. Avoid creating a sense of false urgency or making unrealistic promises.
 
+Maintain a professional, consultative, and trustworthy tone throughout. The goal is to be genuinely helpful and demonstrate expertise based *only* on the information provided.
+Do NOT use spammy phrases, hype, exaggerated claims, or excessive exclamation marks. Avoid creating a sense of false urgency or making unrealistic promises.
+
 Start with "Hi ${leadFirstName},".
 Separate all paragraphs with a blank line (a double newline). Use short paragraphs (1-3 sentences).
 If you include a list, use hyphenated bullet points (e.g., "- Item 1"), with each item on a new line. Ensure a blank line before and after the list if it's between paragraphs.
@@ -257,6 +263,8 @@ function getFollowUpEmailPrompt(firstName, lastService) {
   // New prompt based on revised instructions for getFollowUpEmailPrompt
 return `Write a unique, extremely concise (2-4 sentences total) follow-up email to ${firstName} about ${lastService}. Remind them of the free audit.
 Start with "Hi ${firstName},".
+The reminder should be gentle and value-focused.
+Avoid language that sounds demanding. Do not use spam-trigger words (e.g., 'last chance', 'don't miss out', 'act now'). Focus on being helpful and maintaining a professional, friendly tone.
 The reminder should be gentle and value-focused.
 Avoid language that sounds demanding. Do not use spam-trigger words (e.g., 'last chance', 'don't miss out', 'act now'). Focus on being helpful and maintaining a professional, friendly tone.
 If the email content forms more than one paragraph, ensure paragraphs are separated by a blank line (a double newline).

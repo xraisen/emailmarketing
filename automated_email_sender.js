@@ -279,10 +279,6 @@ function processReplies() {
         logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
         return;
       }
-      if (!threads || threads.length === 0) {
-        logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
-        return;
-      }
 
       const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
       const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
