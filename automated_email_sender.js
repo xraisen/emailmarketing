@@ -7,6 +7,7 @@
  * @return {string|null} The AI-generated email content, or null if an error occurred.
  */
 function getAIEmailContent(promptText) { // MODIFIED SIGNATURE
+  // Defer CONFIG access until we're further into function execution
   const apiKey = CONFIG.GEMINI_API_KEY;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
 

@@ -8,10 +8,18 @@ function initializeSheets() {
   logAction('InitializeSheets', null, null, 'Starting sheet initialization.', 'INFO');
 
   try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    // Use getConfigValue to safely access CONFIG values
+    const spreadsheetId = getConfigValue('SPREADSHEET_ID');
+    if (!spreadsheetId) {
+      logAction('InitializeSheets', null, null, 'SPREADSHEET_ID not set in CONFIG', 'ERROR');
+      console.error('SPREADSHEET_ID not set in CONFIG');
+      return;
+    }
+    
+    const ss = SpreadsheetApp.openById(spreadsheetId);
     if (!ss) {
-      logAction('InitializeSheets', null, null, `Failed to open spreadsheet with ID: ${CONFIG.SPREADSHEET_ID}`, 'ERROR');
-      console.error(`Failed to open spreadsheet with ID: ${CONFIG.SPREADSHEET_ID}`);
+      logAction('InitializeSheets', null, null, `Failed to open spreadsheet with ID: ${spreadsheetId}`, 'ERROR');
+      console.error(`Failed to open spreadsheet with ID: ${spreadsheetId}`);
       return;
     }
 
@@ -223,6 +231,7 @@ function setupTriggers() {
  * @return {string|null} The Organization URI or null if an error occurs.
  */
 function getCalendlyOrganizationUri() {
+  // Defer CONFIG access until we're inside the function
   const token = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN; // Ensure this is defined
   const url = 'https://api.calendly.com/users/me';
   const options = {
@@ -242,8 +251,9 @@ function getCalendlyOrganizationUri() {
     // Log the result
     Logger.log(`Your Organization URI is: ${orgUri}`);
     
-    // Optionally write to a spreadsheet
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); // Ensure SPREADSHEET_ID is defined
+    // Defer CONFIG access until we need it
+    const spreadsheetId = CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(spreadsheetId); // Ensure SPREADSHEET_ID is defined
     const sheet = ss.getSheetByName('Config'); // Adjust sheet name as needed
     if (sheet) {
       sheet.getRange('A1').setValue(orgUri); // Adjust cell as needed
