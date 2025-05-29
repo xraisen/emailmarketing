@@ -252,36 +252,13 @@ Run these functions from `Setup.js` in the specified order:
 5.  **Who has access:** "Anyone".
 6.  Click "Deploy". Copy the **Web app URL**.
 
-**G. Setup Calendly Webhook (Programmatic - Recommended):**
+**G. Setup Calendly Webhook**
 
-1.  **Run `createCalendlyWebhookSubscription(webAppUrl)`:**
-    *   You need to pass the Web App URL (copied in Step F) as an argument. The easiest way is to use (or create if not present) the `runCreateWebhookHelper` function in your `Setup.js` file. **It is critical to edit this function before running it**:
-        ```javascript
-        // In Setup.js:
-        function runCreateWebhookHelper() {
-          // IMPORTANT: Replace the placeholder string below with your actual Web App URL
-          // obtained after deploying your script (see Step F).
-          const webAppUrl = "YOUR_DEPLOYED_WEB_APP_URL_HERE"; 
-
-          // --- Do not modify below this line unless you know what you are doing ---
-          if (webAppUrl === "YOUR_DEPLOYED_WEB_APP_URL_HERE" || !webAppUrl.startsWith("https://script.google.com/")) {
-            console.error("ERROR: webAppUrl in runCreateWebhookHelper is still the placeholder or invalid. Please edit Setup.js.");
-            // If logAction is available and configured:
-            // logAction('RunWebhookHelper', null, null, 'ERROR: webAppUrl not replaced in Setup.js', 'ERROR');
-            return; 
-          }
-          createCalendlyWebhookSubscription(webAppUrl);
-        }
-        ```
-        **Before running `runCreateWebhookHelper`:**
-        1. Ensure you have completed Step F and copied your Web App URL.
-        2. **Open `Setup.js` in the Apps Script editor.**
-        3. **Replace `"YOUR_DEPLOYED_WEB_APP_URL_HERE"`** within the `runCreateWebhookHelper` function with your actual, copied Web App URL.
-        4. Save the `Setup.js` file.
-    *   Select `runCreateWebhookHelper` from the function dropdown and click "Run".
-    *   Check the Apps Script execution logs (View > Logs in the editor) and/or the 'Logs' sheet (if configured) for a success or error message from this function. It will no longer display a dialog box.
-    *   Note: 'Programmatic - Recommended' means running this function (typically via the `runCreateWebhookHelper`) manually from the Apps Script editor. It automates the webhook creation with Calendly but is not a fully autonomous, hands-off step.
-*   **Manual Setup Alternative:** You can also set up webhooks manually in Calendly's UI. Point it to your Web App URL and select the `invitee.created` and `invitee.canceled` events. If Calendly provides a signing key during this manual setup, you should update `CONFIG.CALENDLY_SIGNING_KEY` in `Config.js` with that key for more meaningful signature logging/verification.
+1. Ensure your Apps Script project is deployed as a Web App (see Section F, "Deploy Web App (for Calendly Webhook)").
+2. In the Apps Script editor, select the `createCalendlyWebhookSubscription` function from `Setup.js` using the function dropdown menu.
+3. Click the "Run" button (it looks like a play icon). This function will automatically attempt to use your currently deployed Web App URL to create the webhook subscription with Calendly for the `invitee.created` and `invitee.canceled` events.
+4. Check the execution logs (View > Logs) for a success message. A "201 Created" response indicates a new webhook was made. A "409 Conflict" response indicates the webhook already exists for your Web App URL, which is also considered a success by the function.
+5. **Important**: Verify the webhook is correctly listed in your Calendly account under "Integrations" > "API & Webhooks" (or similar section) and is pointing to the correct Web App URL.
 
 ## Example Scenario
 

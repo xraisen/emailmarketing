@@ -262,7 +262,6 @@ function getCalendlyOrganizationUri() {
  * FOR MANUAL EXECUTION: Creates a Calendly webhook subscription using credentials from Config.gs.
  * User must first set CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN and run getCalendlyOrganizationUri()
  * to set CONFIG.ORGANIZATION_URI in Config.gs.
- * @param {string} webAppUrl The URL of the deployed Google Apps Script web app.
  * @return {boolean} True if successful, false otherwise.
  */
 function createCalendlyWebhookSubscription() {
@@ -278,14 +277,14 @@ function createCalendlyWebhookSubscription() {
   }
 
   if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME') {
-    const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.gs. Please update it with your actual token first.';
+    const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.js. Please update it with your actual token first.';
     console.error(msg);
     logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
     return false;
   }
 
   if (!orgUri || orgUri === 'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME') {
-    const msg = 'Error: ORGANIZATION_URI is not set in Config.gs. Please run getCalendlyOrganizationUri() and update Config.gs first.';
+    const msg = 'Error: ORGANIZATION_URI is not set in Config.js. Please run getCalendlyOrganizationUri() and update Config.js first.';
     console.error(msg);
     logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
     return false;
@@ -294,7 +293,7 @@ function createCalendlyWebhookSubscription() {
   try {
     const payload = {
       url: webAppUrl,
-      events: ['invitee.created', 'invitee.canceled'], // Updated event list
+      events: ['invitee.created', 'invitee.canceled'],
       organization: orgUri,
       scope: 'organization'
     };
@@ -312,18 +311,18 @@ function createCalendlyWebhookSubscription() {
     const responseCode = response.getResponseCode();
     const responseBody = response.getContentText();
 
-    if (responseCode === 201) { // 201 Created is success
+    if (responseCode === 201) {
       const successMsg = 'Successfully created Calendly webhook subscription for events: invitee.created, invitee.canceled. Response: ' + responseBody;
       console.log(successMsg);
       logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS');
       return true;
-    } else if (responseCode === 409) { // 409 Conflict means the hook already exists, which is acceptable
-      const successMsg = 'Calendly webhook subscription already exists for this URL. Response: ' + responseBody;
+    } else if (responseCode === 409) {
+      const successMsg = 'Calendly webhook subscription already exists for this URL (HTTP 409 Conflict). Response: ' + responseBody;
       console.log(successMsg);
-      logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS');
+      logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS'); // Still a success for our purposes
       return true;
     } else {
-      const errorMsg = 'Error creating Calendly webhook subscription. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your token and Org URI in Config.gs are correct and the Web App URL is valid.';
+      const errorMsg = 'Error creating Calendly webhook subscription. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your token and Org URI in Config.js are correct and the Web App URL is valid.';
       console.error(errorMsg);
       logAction('CreateCalendlyWebhook', null, null, errorMsg, 'ERROR');
       return false;
@@ -334,26 +333,4 @@ function createCalendlyWebhookSubscription() {
     logAction('CreateCalendlyWebhookError', null, null, errorMsg, 'ERROR');
     return false;
   }
-}
-
-// HELPER FUNCTION FOR MANUAL EXECUTION:
-// Creates the Calendly webhook subscription.
-// IMPORTANT: Before running this function from the Apps Script editor:
-// 1. Deploy your script as a Web App (Deploy > New deployment).
-// 2. Copy the Web App URL provided after deployment.
-// 3. Paste that URL into the placeholder string "YOUR_DEPLOYED_WEB_APP_URL_HERE" below.
-// 4. Save the script.
-// 5. Select 'runCreateWebhookHelper' from the function dropdown and click 'Run'.
-// Failure to replace the placeholder URL will result in an error.
-function runCreateWebhookHelper() {
-  const webAppUrl = "https://script.google.com/macros/s/AKfycbzPi1BJmoQH-mCIXsnLygK4JfmI7EB5CKJbSwTcg-k_c8pxJO8Ave1P2THGCWTaxQGwfA/exec"; // <-- REPLACE THIS WITH YOUR ACTUAL WEB APP URL
-
-  if (webAppUrl === "YOUR_DEPLOYED_WEB_APP_URL_HERE" || !webAppUrl.startsWith("https://script.google.com/")) {
-    console.error("ERROR in runCreateWebhookHelper: The webAppUrl is still the placeholder or invalid. Please edit Setup.js and replace 'YOUR_DEPLOYED_WEB_APP_URL_HERE' with your actual deployed Web App URL.");
-    logAction('RunWebhookHelper', null, null, 'ERROR: webAppUrl not replaced in Setup.js. Please edit the runCreateWebhookHelper function.', 'ERROR');
-    // Optionally, alert the user if this is ever run in a context that allows UI (though the goal is to avoid UI alerts)
-    // SpreadsheetApp.getUi().alert("Configuration Error", "webAppUrl in runCreateWebhookHelper is not set. Please edit Setup.js.", SpreadsheetApp.getUi().ButtonSet.OK);
-    return;
-  }
-  createCalendlyWebhookSubscription(webAppUrl);
 }

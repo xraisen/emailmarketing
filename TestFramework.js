@@ -294,6 +294,7 @@ function testEmailToProspect() {
 
 function testEmailToPR() {
     logTestMessage("Starting testEmailToPR...");
+
     const mockLeadData = { 
         firstName: "TestBooker", 
         lastService: "Premium Package",
@@ -302,12 +303,18 @@ function testEmailToPR() {
         bookingTime: "2025-06-15T14:30:00Z", 
         leadId: "TEST_PR_002"
     };
-    const expectedPrEmailRecipient = "test@example.com"; 
+    const expectedPrEmailRecipient = "test@example.com"; // As per user spec for verification
     const mockFormattedTime = "2025-06-15 10:30 MOCK_TZ"; 
+    
     var capturedPrEmailArgs = null;
-    var slackApiCalled = false;
-    var formatDateCalled = false;
+    var slackApiCalled = false; // To check if UrlFetchApp for Slack was called
+    // var formatDateCalled = false; // Removed as per earlier refactoring; mockUtilitiesFormatDate logs its call
 
+    // Use withTempConfig to set PR_EMAIL for this test
+    const restorePrEmailConfig = withTempConfig('PR_EMAIL', expectedPrEmailRecipient);
+
+    // --- MOCKING ---
+    logTestMessage("Setting up mocks (with temp CONFIG.PR_EMAIL set to: " + CONFIG.PR_EMAIL + ")");
     const gmailMock = mockGmailSendEmail(args => capturedPrEmailArgs = args);
     const urlFetchMock = mockUrlFetchAppFetch(
         [{ urlPattern: "hooks.slack.com", callback: () => slackApiCalled = true, contentText: "ok" }],
@@ -316,55 +323,84 @@ function testEmailToPR() {
             return { getResponseCode: function() { return 404; }, getContentText: function() { return "Mock: URL not handled."; }};
         }
     );
-    var formatDateCalled = false; // This will be removed as per instructions.
+    const formatDateMock = mockUtilitiesFormatDate(mockFormattedTime);
 
-    // Use the helper function
-    const formatDateMock = mockUtilitiesFormatDate(mockFormattedTime); 
-    // formatDateCalled flag is removed as we rely on the helper's logging.
-
-    logTestMessage("Current CONFIG.PR_EMAIL: " + CONFIG.PR_EMAIL);
-    if (CONFIG.PR_EMAIL !== expectedPrEmailRecipient) {
-        logTestMessage("WARNING: CONFIG.PR_EMAIL ('" + CONFIG.PR_EMAIL + "') differs from test's expectedPrEmailRecipient ('" + expectedPrEmailRecipient + "').");
-    }
-
+    // --- EXECUTION ---
+    logTestMessage("Executing sendPRAlert logic...");
     try {
-        sendPRAlert(mockLeadData.firstName, mockLeadData.lastService, mockLeadData.leadEmail, mockLeadData.leadPhone, mockLeadData.bookingTime, mockLeadData.leadId);
+        sendPRAlert(
+            mockLeadData.firstName, 
+            mockLeadData.lastService, 
+            mockLeadData.leadEmail, 
+            mockLeadData.leadPhone, 
+            mockLeadData.bookingTime, 
+            mockLeadData.leadId
+        );
     } catch (e) {
-        logTestMessage("ERROR during sendPRAlert: " + e.toString() + " Stack: " + (e.stack || 'N/A'));
+        logTestMessage("ERROR during sendPRAlert execution: " + e.toString() + " Stack: " + (e.stack || 'N/A'));
     }
 
+    // --- VERIFICATION ---
+    logTestMessage("Verifying PR email parameters...");
     var testPassed = true;
+
+    // Explicitly check if CONFIG.PR_EMAIL was correctly set by withTempConfig during the call
+    // This is an internal check of the test setup itself.
+    // The actual recipient check is done on capturedPrEmailArgs.to
+    if (CONFIG.PR_EMAIL !== expectedPrEmailRecipient) {
+        logTestMessage("CRITICAL TEST SETUP FLAW: CONFIG.PR_EMAIL was '" + CONFIG.PR_EMAIL + "' during sendPRAlert execution, not the expected temporary value of '" + expectedPrEmailRecipient + "'. The withTempConfig might not have worked as expected or was restored prematurely.");
+        // This would be a fundamental issue with the test's premise if it occurred.
+    }
+
+
     if (!capturedPrEmailArgs) {
         logTestMessage("FAILURE: GmailApp.sendEmail was not called for PR alert.");
         testPassed = false;
     } else {
         if (capturedPrEmailArgs.to !== expectedPrEmailRecipient) {
-            logTestMessage("FAILURE: PR Email recipient. Expected: '" + expectedPrEmailRecipient + "', Got: '" + capturedPrEmailArgs.to + "'");
+            // This check is now against the temporarily set expectedPrEmailRecipient
+            logTestMessage("FAILURE: PR Email recipient mismatch. Expected (and temp CONFIG.PR_EMAIL): '" + expectedPrEmailRecipient + "', Got: '" + capturedPrEmailArgs.to + "'");
             testPassed = false;
-        } else { logTestMessage("SUCCESS: PR Email recipient matches."); }
+        } else {
+            logTestMessage("SUCCESS: PR Email recipient matches expected temporary value '" + expectedPrEmailRecipient + "'.");
+        }
+
         const expectedPrSubject = "NEW CALL - " + mockLeadData.firstName;
         if (capturedPrEmailArgs.subject !== expectedPrSubject) {
-            logTestMessage("FAILURE: PR Email subject. Expected: '" + expectedPrSubject + "', Got: '" + capturedPrEmailArgs.subject + "'");
+            logTestMessage("FAILURE: PR Email subject mismatch. Expected: '" + expectedPrSubject + "', Got: '" + capturedPrEmailArgs.subject + "'");
             testPassed = false;
-        } else { logTestMessage("SUCCESS: PR Email subject matches."); }
+        } else {
+            logTestMessage("SUCCESS: PR Email subject matches.");
+        }
+
         const expectedPrBody = "Service: " + mockLeadData.lastService + "\nTime: " + mockFormattedTime + "\nContact: " + mockLeadData.leadEmail + " | " + mockLeadData.leadPhone;
         if (capturedPrEmailArgs.body !== expectedPrBody) {
-            logTestMessage("FAILURE: PR Email body. Expected: \n'" + expectedPrBody + "'\nGot: \n'" + capturedPrEmailArgs.body + "'");
+            logTestMessage("FAILURE: PR Email body mismatch. Expected: \n'" + expectedPrBody + "'\nGot: \n'" + capturedPrEmailArgs.body + "'");
             testPassed = false;
-        } else { logTestMessage("SUCCESS: PR Email body matches."); }
-    }
-    if (CONFIG.SLACK_WEBHOOK_URL && CONFIG.SLACK_WEBHOOK_URL !== 'YOUR_SLACK_WEBHOOK_URL' && !slackApiCalled) {
-        logTestMessage("POTENTIAL ISSUE: Slack API (UrlFetchApp) not called, though Slack URL is configured.");
+        } else {
+            logTestMessage("SUCCESS: PR Email body matches.");
+        }
     }
     
-    if(testPassed) { logTestMessage("Overall SUCCESS: testEmailToPR passed."); }
-    else { logTestMessage("Overall FAILURE: testEmailToPR failed."); }
+    if (CONFIG.SLACK_WEBHOOK_URL && CONFIG.SLACK_WEBHOOK_URL !== 'YOUR_SLACK_WEBHOOK_URL_PLACEHOLDER_IF_ANY' && !slackApiCalled && urlFetchMock) {
+        // Check if originalUrlFetchAppFetch was defined before assuming it was mockable
+        logTestMessage("INFO: Slack API (UrlFetchApp) was not called for PR alert. This is acceptable if Slack is not configured or if this test is email-only focused for sendPRAlert's email part.");
+    }
 
-    gmailMock.restore();
-    urlFetchMock.restore();
-    // Restore using the helper's restore method
-    if (formatDateMock) formatDateMock.restore(); 
 
+    if(testPassed) {
+        logTestMessage("Overall SUCCESS: testEmailToPR passed.");
+    } else {
+        logTestMessage("Overall FAILURE: testEmailToPR failed. See logs above for details.");
+    }
+
+    // --- TEARDOWN (Restore Mocks & Config) ---
+    logTestMessage("Restoring original functions and CONFIG values...");
+    if(gmailMock) gmailMock.restore();
+    if(urlFetchMock) urlFetchMock.restore();
+    if(formatDateMock) formatDateMock.restore();
+    
+    restorePrEmailConfig(); // Restore CONFIG.PR_EMAIL
 
     logTestMessage("testEmailToPR finished.");
 }
