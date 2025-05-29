@@ -87,18 +87,26 @@ function doPost(e) {
         const actualSheetRow = i + 2; // +1 for 0-based index, +1 for header row
         
         const leadId = row[columnIndexMap['Lead ID']];
-        const firstName = row[columnIndexMap['First Name']] || inviteeName; // Use sheet data or fallback to Calendly name
-        const lastService = row[columnIndexMap['Last Service']];
-        const phone = row[columnIndexMap['Phone']];
+        // const firstName = row[columnIndexMap['First Name']]; // This is from the sheet
+        const lastServiceInSheet = row[columnIndexMap['Last Service']]; // Explicitly get from sheet
+        const phoneInSheet = row[columnIndexMap['Phone']]; // Explicitly get from sheet
+
+        // Extract invitee's full name from Calendly payload if available, otherwise use sheet's First Name
+        const inviteeFullName = payload.payload.name || row[columnIndexMap['First Name']];
+
 
         sheet.getRange(actualSheetRow, columnIndexMap['Status'] + 1).setValue(STATUS.BOOKED);
         sheet.getRange(actualSheetRow, columnIndexMap['Last Contact'] + 1).setValue(new Date(bookingStartTime));
         
         logAction('CalendlyLeadBooked', leadId, inviteeEmail, 'Lead status updated to BOOKED. Booking time: ' + bookingStartTime, 'SUCCESS');
         
-        sendPRAlert(firstName, lastService, inviteeEmail, phone, bookingStartTime, leadId); // From automated_email_sendPRAlert.gs
+        // Call PR Alert (using firstName from sheet for consistency if desired for PR, or inviteeFullName)
+        sendPRAlert(row[columnIndexMap['First Name']], lastServiceInSheet, inviteeEmail, phoneInSheet, bookingStartTime, leadId);
         
-        SpreadsheetApp.flush(); // Ensure changes are saved immediately
+        // NEW: Call Create Calendar Event
+        createCalendarEvent(inviteeEmail, inviteeFullName, bookingStartTime, lastServiceInSheet, phoneInSheet, leadId);
+        
+        SpreadsheetApp.flush(); 
         return ContentService.createTextOutput(JSON.stringify({ success: true, message: 'Lead updated to BOOKED' })).setMimeType(ContentService.MimeType.JSON);
       }
     }
@@ -122,6 +130,51 @@ function doPost(e) {
   } else {
     logAction('CalendlyWebhookLockError', null, (e && e.postData && e.postData.contents && JSON.parse(e.postData.contents).payload ? JSON.parse(e.postData.contents).payload.email : 'Unknown Email'), 'Could not obtain lock for Calendly doPost after 10 seconds. Webhook processing skipped.', 'ERROR');
     return ContentService.createTextOutput(JSON.stringify({ error: 'Server busy, please try again later.' })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Creates a Google Calendar event for a booked audit.
+ * @param {string} email The invitee's email address.
+ * @param {string} name The invitee's name. (Potentially full name from Calendly)
+ * @param {string} startTime ISO string for the event start time.
+ * @param {string} lastService The service the audit is for.
+ * @param {string} [phone] The invitee's phone number (optional).
+ * @param {string} leadId The Lead ID.
+ */
+function createCalendarEvent(email, name, startTime, lastService, phone, leadId) {
+  try {
+    // Ensure CalendarApp is available
+    if (typeof CalendarApp === 'undefined') {
+      logAction('CALENDAR_EVENT_ERROR', leadId, email, 'CalendarApp service not available.', 'ERROR');
+      console.error('CalendarApp service not available for Lead ID: ' + leadId);
+      return;
+    }
+    const calendar = CalendarApp.getDefaultCalendar();
+    const start = new Date(startTime);
+    const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 minutes duration
+    const phoneDisplay = phone || '';
+
+    const eventTitle = `Free Audit with ${name} (${lastService})`;
+    const eventDescription = `Contact: ${email} | ${phoneDisplay}
+Service: ${lastService}
+Lead ID: ${leadId}`;
+    
+    const event = calendar.createEvent(
+      eventTitle,
+      start,
+      end,
+      {
+        description: eventDescription,
+        guests: email,
+        sendInvites: true // Send an invitation to the lead
+      }
+    );
+    logAction('CALENDAR_EVENT_SUCCESS', leadId, email, 'Created calendar event. ID: ' + event.getId(), 'SUCCESS');
+    console.log('Calendar event created for Lead ID: ' + leadId + ', Event ID: ' + event.getId());
+  } catch (e) {
+    logAction('CALENDAR_EVENT_ERROR', leadId, email, 'Error creating calendar event: ' + e.message + (e.stack ? ' Stack: ' + e.stack : ''), 'ERROR');
+    console.error('Error creating calendar event for Lead ID: ' + leadId + '. Error: ' + e.message + (e.stack ? ' Stack: ' + e.stack : ''));
   }
 }
 
