@@ -4,11 +4,8 @@
  * Generates email content using the Gemini API.
  *
  * @param {string} promptText The fully formed prompt text to send to the API.
- * @param {string} promptText The fully formed prompt text to send to the API.
  * @return {string|null} The AI-generated email content, or null if an error occurred.
  */
-function getAIEmailContent(promptText) { // MODIFIED SIGNATURE
-  // const promptText = promptFunction(firstName, lastService); // REMOVED
 function getAIEmailContent(promptText) { // MODIFIED SIGNATURE
   // const promptText = promptFunction(firstName, lastService); // REMOVED
   const apiKey = CONFIG.GEMINI_API_KEY;
@@ -66,44 +63,6 @@ function getAIEmailContent(promptText) { // MODIFIED SIGNATURE
     // Handle UrlFetchApp errors (network, etc.)
     const errorMessage = `Error calling Gemini API: ${e.message} ${e.stack}`;
     logAction('GetAIEmailContent', null, null, errorMessage, 'ERROR');
-    console.error(errorMessage);
-    return null;
-  }
-}
-
-// In automated_email_sender.js
-// (Make sure getContextualFollowUpPrompt from prompt.js is accessible)
-// (Make sure getAIEmailContent is the modified version)
-// (Make sure CONFIG is accessible for yourName if it's stored there, or pass it directly)
-
-function generateAIContextualFollowUp(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) { // NEW signature
-  try {
-    // interactionHistorySummary can be null/empty, so no strict check needed for it here.
-    if (!classifiedData || !leadFirstName || !yourName || !serviceProfile) {
-      const errorMessage = `Missing one or more required arguments (excluding history) for generateAIContextualFollowUp. classifiedData: ${!!classifiedData}, leadFirstName: ${!!leadFirstName}, yourName: ${!!yourName}, serviceProfile: ${!!serviceProfile}`;
-      logAction('GenerateAIFollowUpError', null, null, errorMessage, 'ERROR');
-      console.error('GenerateAIFollowUpError: ' + errorMessage);
-      return null;
-    }
-
-    const followUpPrompt = getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary); // NEW: Pass interactionHistorySummary
-    logAction('GenerateAIFollowUpInfo', null, null, `Generated follow-up prompt: ${followUpPrompt.substring(0, 200)}...`, 'INFO');
-
-
-    const emailBody = getAIEmailContent(followUpPrompt);
-
-    if (!emailBody) {
-      logAction('GenerateAIFollowUpError', null, null, 'Received null response from getAIEmailContent for follow-up email generation.', 'ERROR');
-      console.error('GenerateAIFollowUpError: Received null response from getAIEmailContent for follow-up email generation.');
-      return null;
-    }
-
-    logAction('GenerateAIFollowUpSuccess', null, null, `Successfully generated AI follow-up email body. Length: ${emailBody.length}`, 'SUCCESS');
-    return emailBody;
-
-  } catch (e) {
-    const errorMessage = `Error in generateAIContextualFollowUp: ${e.message}. Stack: ${e.stack}`;
-    logAction('GenerateAIFollowUpCritical', null, null, errorMessage, 'CRITICAL');
     console.error(errorMessage);
     return null;
   }
@@ -248,8 +207,6 @@ function dailyEmailBatch() {
 
           const initialPrompt = getInitialEmailPrompt(firstName, lastService); // Generate prompt first
           const aiContent = getAIEmailContent(initialPrompt); // Pass prompt text directly
-          const initialPrompt = getInitialEmailPrompt(firstName, lastService); // Generate prompt first
-          const aiContent = getAIEmailContent(initialPrompt); // Pass prompt text directly
           if (!aiContent) {
             logAction('DailyBatchAIError', leadIdValue, email, 'Failed to generate AI content for initial email.', 'ERROR');
             console.error(`AI content generation failed for Lead ID ${leadIdValue}, email: ${email}`);
@@ -314,30 +271,13 @@ function processReplies() {
       const DEFAULT_CALENDLY_LINK = CONFIG.CALENDLY_LINK;
       // const EMAIL_FOOTER_TEXT = CONFIG.EMAIL_FOOTER; // AI prompt handles this
 
-      // Pre-computation/Setup
-      const YOUR_NAME = "Jose"; // Or from a config
-      const AI_SERVICE_PROFILE = CONFIG.AI_SERVICES_PROFILE;
-      const DEFAULT_CALENDLY_LINK = CONFIG.CALENDLY_LINK;
-      // const EMAIL_FOOTER_TEXT = CONFIG.EMAIL_FOOTER; // AI prompt handles this
-
       const threads = GmailApp.search('is:unread in:inbox -is:trash', 0, 50);
 
       if (!threads || threads.length === 0) {
         logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
         return;
       }
-      if (!threads || threads.length === 0) {
-        logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
-        return;
-      }
 
-      const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-      const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
-      if (!sheet) {
-        logAction('ProcessRepliesError', null, null, `Sheet '${LEADS_SHEET_NAME}' not found.`, 'ERROR');
-        console.error(`Sheet '${LEADS_SHEET_NAME}' not found.`);
-        return;
-      }
       const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
       const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
       if (!sheet) {
@@ -348,10 +288,7 @@ function processReplies() {
 
       const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
       const colIdx = getColumnIndexMap(headerRow);
-      const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const colIdx = getColumnIndexMap(headerRow);
 
-      const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
       const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
     for (const col of requiredSheetColumns) {
       if (colIdx[col] === undefined) {
@@ -580,76 +517,6 @@ function processReplies() {
   } else {
     logAction('ProcessRepliesLockError', null, null, 'Could not obtain lock for processReplies after 10 seconds. Processing run skipped.', 'ERROR');
     console.warn('Could not obtain lock for processReplies. Processing run skipped.');
-  }
-}
-
-// (Make sure getServiceClassificationPrompt is accessible, typically true in Apps Script if both are .js files in the same project)
-// (Make sure CONFIG is accessible)
-
-function classifyProspectReply(replyText, leadFirstName, interactionHistorySummary) { // NEW signature
-  try {
-    const serviceProfile = CONFIG.AI_SERVICES_PROFILE;
-    if (!serviceProfile) {
-      logAction('ClassifyProspectReplyError', null, null, 'CONFIG.AI_SERVICES_PROFILE is not defined.', 'ERROR');
-      console.error('ClassifyProspectReplyError: CONFIG.AI_SERVICES_PROFILE is not defined.');
-      return null;
-    }
-
-    const classificationPrompt = getServiceClassificationPrompt(replyText, leadFirstName, serviceProfile, interactionHistorySummary); // NEW: Pass interactionHistorySummary
-    logAction('ClassifyProspectReplyInfo', null, null, `Generated classification prompt: ${classificationPrompt.substring(0, 200)}...`, 'INFO'); // Log part of the prompt
-
-    const jsonStringResponse = getAIEmailContent(classificationPrompt); // Call modified getAIEmailContent
-
-    if (!jsonStringResponse) {
-      logAction('ClassifyProspectReplyError', null, null, 'Received null response from getAIEmailContent for classification.', 'ERROR');
-      console.error('ClassifyProspectReplyError: Received null response from getAIEmailContent for classification.');
-      return null;
-    }
-    // Log raw response
-    logAction('ClassifyProspectReplyRawResp', null, null, `Raw classification response snippet: ${jsonStringResponse.substring(0, 500)}`, 'DEBUG');
-
-    // logAction('ClassifyProspectReplyInfo', null, null, `Received JSON string for classification: ${jsonStringResponse.substring(0,200)}...`, 'INFO'); // This is now covered by RawResp and Parsed logs
-
-    // Attempt to parse the JSON, ensuring it's robust against malformed AI output
-    let classifiedData;
-    try {
-      classifiedData = JSON.parse(jsonStringResponse);
-    } catch (parseError) {
-      const parseErrorMessage = `Error parsing JSON response in classifyProspectReply: ${parseError.message}. Response string: ${jsonStringResponse}`;
-      logAction('ClassifyProspectReplyParseError', null, null, parseErrorMessage, 'ERROR');
-      console.error(parseErrorMessage);
-      // Try to extract content if it's a common markdown ```json ... ``` block
-      const match = jsonStringResponse.match(/```json\s*([\s\S]*?)\s*```/);
-      if (match && match[1]) {
-        try {
-          classifiedData = JSON.parse(match[1]);
-          logAction('ClassifyProspectReplyParseRecovery', null, null, 'Successfully parsed JSON after extracting from markdown.', 'INFO');
-        } catch (nestedParseError) {
-          const nestedParseErrorMessage = `Error parsing JSON even after markdown extraction: ${nestedParseError.message}. Extracted string: ${match[1]}`;
-          logAction('ClassifyProspectReplyNestedParseError', null, null, nestedParseErrorMessage, 'ERROR');
-          console.error(nestedParseErrorMessage);
-          return null; // Give up if still can't parse
-        }
-      } else {
-        return null; // If not a markdown block, and initial parse failed, return null
-      }
-    }
-    // Log parsed data
-    logAction('ClassifyProspectReplyParsed', null, null, `Parsed classification data: ${JSON.stringify(classifiedData).substring(0,500)}`, 'DEBUG');
-    
-    logAction('ClassifyProspectReplySuccess', null, null, 'Successfully parsed classification response.', 'SUCCESS');
-    return classifiedData;
-
-  } catch (e) {
-    // Catch any other unexpected errors during the process
-    // Using jsonStringResponse in the error message might be problematic if it's not defined due to an error earlier in the try block.
-    // So, declare it outside or ensure it's handled. For simplicity, we'll rely on its scope if an error happens after its assignment.
-    // If getAIEmailContent fails and returns null, jsonStringResponse will be null.
-    const responseForError = typeof jsonStringResponse !== 'undefined' ? jsonStringResponse : 'N/A';
-    const errorMessage = `Error in classifyProspectReply: ${e.message}. Response string: ${responseForError}. Stack: ${e.stack}`;
-    logAction('ClassifyProspectReplyCritical', null, null, errorMessage, 'CRITICAL');
-    console.error(errorMessage);
-    return null;
   }
 }
 
