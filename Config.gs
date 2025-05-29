@@ -39,16 +39,4 @@ const STATUS = {
 // 2. Add a property with the name "GEMINI_API_KEY" and its value.
 // 3. Uncomment the line below and the relevant line for GEMINI_API_KEY in the CONFIG object.
 // CONFIG.GEMINI_API_KEY = SCRIPT_PROPERTIES.getProperty('GEMINI_API_KEY') || 'YOUR_GEMINI_API_KEY_FALLBACK_IF_NOT_SET';
-// This approach can be more secure for sensitive keys if the script is shared.I have successfully updated the `Config.gs` file.
-
-The changes include:
-1.  Added `CALENDLY_PERSONAL_ACCESS_TOKEN: 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME'` to the `CONFIG` object.
-2.  Added `ORGANIZATION_URI: 'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME'` to the `CONFIG` object.
-3.  Ensured these new keys are clearly commented as requiring user input.
-4.  Verified that no hardcoded example tokens (like the `eyJraWQiOi...` example) are present for these new keys.
-5.  Added more descriptive comments for other user-provided fields like `SPREADSHEET_ID`, `GEMINI_API_KEY`, `CALENDLY_LINK`, `PR_EMAIL`, `SLACK_WEBHOOK_URL`, and `USER_TIMEZONE` to guide the user.
-6.  Clarified the role of `CALENDLY_SIGNING_KEY`.
-7.  Enhanced comments for `DAILY_EMAIL_QUOTA` and `EMAIL_BATCH_SIZE`.
-8.  Improved the comments regarding the use of `PropertiesService` for potentially more secure key management.
-
-The `CONFIG` object now correctly reflects the new additions with appropriate placeholders and comments.
+// This approach can be more secure for sensitive keys if the script is shared.
