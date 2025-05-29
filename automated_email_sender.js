@@ -3,14 +3,11 @@
 /**
  * Generates email content using the Gemini API.
  *
- * @param {string} firstName The first name of the lead.
- * @param {string} lastService The last service provided to the lead.
- * @param {function} promptFunction A function that accepts firstName and lastService 
- *                                  and returns a formatted prompt string.
+ * @param {string} promptText The fully formed prompt text to send to the API.
  * @return {string|null} The AI-generated email content, or null if an error occurred.
  */
-function getAIEmailContent(firstName, lastService, promptFunction) {
-  const promptText = promptFunction(firstName, lastService);
+function getAIEmailContent(promptText) { // MODIFIED SIGNATURE
+  // const promptText = promptFunction(firstName, lastService); // REMOVED
   const apiKey = CONFIG.GEMINI_API_KEY;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
 
@@ -66,6 +63,44 @@ function getAIEmailContent(firstName, lastService, promptFunction) {
     // Handle UrlFetchApp errors (network, etc.)
     const errorMessage = `Error calling Gemini API: ${e.message} ${e.stack}`;
     logAction('GetAIEmailContent', null, null, errorMessage, 'ERROR');
+    console.error(errorMessage);
+    return null;
+  }
+}
+
+// In automated_email_sender.js
+// (Make sure getContextualFollowUpPrompt from prompt.js is accessible)
+// (Make sure getAIEmailContent is the modified version)
+// (Make sure CONFIG is accessible for yourName if it's stored there, or pass it directly)
+
+function generateAIContextualFollowUp(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) { // NEW signature
+  try {
+    // interactionHistorySummary can be null/empty, so no strict check needed for it here.
+    if (!classifiedData || !leadFirstName || !yourName || !serviceProfile) {
+      const errorMessage = `Missing one or more required arguments (excluding history) for generateAIContextualFollowUp. classifiedData: ${!!classifiedData}, leadFirstName: ${!!leadFirstName}, yourName: ${!!yourName}, serviceProfile: ${!!serviceProfile}`;
+      logAction('GenerateAIFollowUpError', null, null, errorMessage, 'ERROR');
+      console.error('GenerateAIFollowUpError: ' + errorMessage);
+      return null;
+    }
+
+    const followUpPrompt = getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary); // NEW: Pass interactionHistorySummary
+    logAction('GenerateAIFollowUpInfo', null, null, `Generated follow-up prompt: ${followUpPrompt.substring(0, 200)}...`, 'INFO');
+
+
+    const emailBody = getAIEmailContent(followUpPrompt);
+
+    if (!emailBody) {
+      logAction('GenerateAIFollowUpError', null, null, 'Received null response from getAIEmailContent for follow-up email generation.', 'ERROR');
+      console.error('GenerateAIFollowUpError: Received null response from getAIEmailContent for follow-up email generation.');
+      return null;
+    }
+
+    logAction('GenerateAIFollowUpSuccess', null, null, `Successfully generated AI follow-up email body. Length: ${emailBody.length}`, 'SUCCESS');
+    return emailBody;
+
+  } catch (e) {
+    const errorMessage = `Error in generateAIContextualFollowUp: ${e.message}. Stack: ${e.stack}`;
+    logAction('GenerateAIFollowUpCritical', null, null, errorMessage, 'CRITICAL');
     console.error(errorMessage);
     return null;
   }
@@ -170,7 +205,8 @@ function dailyEmailBatch() {
             logAction('DailyBatchLeadIDGenerated', leadIdValue, email, 'Generated new Lead ID.', 'INFO');
           }
 
-          const aiContent = getAIEmailContent(firstName, lastService, getInitialEmailPrompt);
+          const initialPrompt = getInitialEmailPrompt(firstName, lastService); // Generate prompt first
+          const aiContent = getAIEmailContent(initialPrompt); // Pass prompt text directly
           if (!aiContent) {
             logAction('DailyBatchAIError', leadIdValue, email, 'Failed to generate AI content for initial email.', 'ERROR');
             console.error(`AI content generation failed for Lead ID ${leadIdValue}, email: ${email}`);
@@ -229,25 +265,31 @@ function processReplies() {
     try {
       logAction('ProcessRepliesStart', null, null, 'Hourly reply processing started with lock.', 'INFO');
 
+      // Pre-computation/Setup
+      const YOUR_NAME = "Jose"; // Or from a config
+      const AI_SERVICE_PROFILE = CONFIG.AI_SERVICES_PROFILE;
+      const DEFAULT_CALENDLY_LINK = CONFIG.CALENDLY_LINK;
+      // const EMAIL_FOOTER_TEXT = CONFIG.EMAIL_FOOTER; // AI prompt handles this
+
       const threads = GmailApp.search('is:unread in:inbox -is:trash', 0, 50);
 
-    if (!threads || threads.length === 0) {
-      logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
-      return;
-    }
+      if (!threads || threads.length === 0) {
+        logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
+        return;
+      }
 
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
-    if (!sheet) {
-      logAction('ProcessRepliesError', null, null, `Sheet '${LEADS_SHEET_NAME}' not found.`, 'ERROR');
-      console.error(`Sheet '${LEADS_SHEET_NAME}' not found.`);
-      return;
-    }
+      const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
+      if (!sheet) {
+        logAction('ProcessRepliesError', null, null, `Sheet '${LEADS_SHEET_NAME}' not found.`, 'ERROR');
+        console.error(`Sheet '${LEADS_SHEET_NAME}' not found.`);
+        return;
+      }
 
-    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const colIdx = getColumnIndexMap(headerRow); // From Utilities.gs
+      const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const colIdx = getColumnIndexMap(headerRow);
 
-    const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
+      const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
     for (const col of requiredSheetColumns) {
       if (colIdx[col] === undefined) {
         logAction('ProcessRepliesError', null, null, `Required column '${col}' not found in sheet for reply processing.`, 'ERROR');
@@ -292,27 +334,111 @@ function processReplies() {
           const currentStatus = leadRow[colIdx['Status']];
 
           if (currentStatus === STATUS.SENT || currentStatus === STATUS.FOLLOW_UP_1) {
-            if (body.includes('yes') || body.includes('interested') || body.includes('i am interested') || body.includes("i'm interested")) {
-              sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.HOT);
-              sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
-              
-              const calendlySubject = `Next Step: Book Your Free Audit for ${lastService}`;
-              const calendlyBody = `Hi ${firstName},\n\nGreat to hear you’re interested! You can book your free audit here: ${CONFIG.CALENDLY_LINK}\n\n${CONFIG.EMAIL_FOOTER}`;
-              
-              sendEmail(senderEmail, calendlySubject, calendlyBody, leadId);
-              sendPRAlert(firstName, lastService, senderEmail, phone, 'Pending', leadId);
-              logAction('ProcessRepliesHotLead', leadId, senderEmail, 'Lead marked HOT. Calendly link sent. PR alert triggered.', 'SUCCESS');
-            
-            } else if (body.includes('no') || body.includes('stop') || body.includes('unsubscribe') || body.includes('not interested')) {
-              sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
-              sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
-              logAction('ProcessRepliesUnqualified', leadId, senderEmail, 'Lead marked UNQUALIFIED.', 'SUCCESS');
-            
+            // 1. Handle explicit opt-out first
+            const lowerBody = body.toLowerCase(); // Ensure body is lowercased for opt-out checks
+            if (lowerBody.includes('stop') || lowerBody.includes('unsubscribe') || lowerBody.includes('remove me')) {
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
+                sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+                logAction('ProcessRepliesOptOut', leadId, senderEmail, 'Lead opted out via reply.', 'SUCCESS');
+                thread.markRead();
+                SpreadsheetApp.flush();
+                leadFoundAndProcessed = true;
+                break; // from inner lead search loop
+            }
+
+            // 2. Attempt AI Classification
+            // Pass original body (not lowercased) to AI if it might affect understanding, though prompts.js usually expects it to be handled
+            // For this implementation, `body` was already lowercased earlier in the function.
+
+            // New: Get Interaction History
+            const interactionHistorySummaryRaw = getLeadInteractionHistory(leadId, senderEmail); // Assuming getLeadInteractionHistory is globally available from Utilities.js
+            const MAX_HISTORY_LENGTH = 2000; // Define a constant or use a CONFIG value if preferred
+            const interactionHistorySummary = truncateString(interactionHistorySummaryRaw, MAX_HISTORY_LENGTH, " [History truncated]"); // Use truncateString from Utilities.js
+
+            logAction('ProcessRepliesHistory', leadId, senderEmail, `Retrieved interaction history (raw length: ${interactionHistorySummaryRaw ? interactionHistorySummaryRaw.length : 0}, truncated length: ${interactionHistorySummary ? interactionHistorySummary.length : 0}): ${interactionHistorySummary ? interactionHistorySummary.substring(0, 300) + "..." : "None"}`, 'INFO');
+
+            // Modified: Call AI Classification with history (passing the truncated summary)
+            const classifiedData = classifyProspectReply(body, firstName, interactionHistorySummary); 
+            // The existing 'ProcessRepliesRawClassification' log will include the new sentiment field automatically.
+            logAction('ProcessRepliesRawClassification', leadId, senderEmail, `Raw AI classification data: ${JSON.stringify(classifiedData)}`, 'INFO');
+
+            const sentiment = classifiedData ? classifiedData.sentiment : null; // Get sentiment
+            logAction('ProcessRepliesSentiment', leadId, senderEmail, `AI Classified Sentiment: ${sentiment}`, 'INFO');
+
+            // Handle negative sentiment explicitly first
+            if (sentiment === "negative") {
+                logAction('ProcessRepliesNegativeSentiment', leadId, senderEmail, 'Negative sentiment detected by AI. Marking as UNQUALIFIED.', 'INFO');
+                sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
+                sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+                // No AI follow-up email is sent.
+            } else if (classifiedData && classifiedData.identified_services && classifiedData.identified_services.length > 0 && classifiedData.identified_services[0] !== "Generic Inquiry" && (sentiment === "positive" || sentiment === "neutral")) {
+                // Positive/Specific AI Classification Path & Positive/Neutral Sentiment
+                // Modified: Call AI Follow-up Generation with history
+                const aiFollowUpBodyRaw = generateAIContextualFollowUp(classifiedData, firstName, YOUR_NAME, AI_SERVICE_PROFILE, interactionHistorySummary);
+
+                if (aiFollowUpBodyRaw) {
+                    let chosenCalendlyLink = DEFAULT_CALENDLY_LINK;
+                    const identifiedServices = classifiedData.identified_services; // Already available
+
+                    // Calendly link logic (as implemented in Step 11 - no change needed here based on current diff)
+                    if (identifiedServices && identifiedServices.length > 0 && identifiedServices[0] !== "Generic Inquiry") {
+                        if (identifiedServices.length === 1) {
+                            const serviceName = identifiedServices[0];
+                            if (AI_SERVICE_PROFILE[serviceName] && AI_SERVICE_PROFILE[serviceName].calendlyLink) {
+                                chosenCalendlyLink = AI_SERVICE_PROFILE[serviceName].calendlyLink;
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service identified: ${serviceName}. Using its specific link.`, 'INFO');
+                            } else {
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, `Single service identified: ${serviceName}, but no specific link. Using default.`, 'INFO');
+                            }
+                        } else { 
+                            const servicePriority = ["Web Design & Development", "Google Ads Management", "GMC/Feed Management", "Funnels", "AI Automation", "Tech Strategy"];
+                            let foundPriorityLink = false;
+                            for (const priorityService of servicePriority) {
+                                if (identifiedServices.includes(priorityService)) {
+                                    if (AI_SERVICE_PROFILE[priorityService] && AI_SERVICE_PROFILE[priorityService].calendlyLink) {
+                                        chosenCalendlyLink = AI_SERVICE_PROFILE[priorityService].calendlyLink;
+                                        logAction('ProcessRepliesCalendly', leadId, senderEmail, `Multiple services identified. Chose link for priority service: ${priorityService}`, 'INFO');
+                                        foundPriorityLink = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!foundPriorityLink) {
+                                logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Multiple services identified. No priority link found or no specific link for priority. Using default.', 'INFO');
+                            }
+                        }
+                    } else { 
+                        logAction('ProcessRepliesCalendly', leadId, senderEmail, 'Generic or no specific service identified by AI. Using default Calendly link.', 'INFO');
+                    }
+                    
+                    const finalAIFollowUpBody = aiFollowUpBodyRaw + `
+
+Here’s the link to book a meeting: ${chosenCalendlyLink}`;
+                    const subject = `Re: Your Inquiry - ${(classifiedData.identified_services.join(' & ') || "Following Up")}`;
+
+                    if (sendEmail(senderEmail, subject, finalAIFollowUpBody, leadId)) {
+                        sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.HOT);
+                        sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+                        sendPRAlert(firstName, classifiedData.identified_services.join(', '), senderEmail, phone, `HOT - AI Classified (Sentiment: ${sentiment})`, leadId); // Updated PR Alert
+                        logAction('ProcessRepliesAIFollowUpSent', leadId, senderEmail, `AI Follow-up sent (Sentiment: ${sentiment}). Classified: ${classifiedData.identified_services.join(', ')}. Subject: ${subject}`, 'SUCCESS');
+                    } else {
+                        logAction('ProcessRepliesAIFollowUpSendError', leadId, senderEmail, `Failed to send AI follow-up (Sentiment: ${sentiment}).`, 'ERROR');
+                    }
+                } else {
+                    logAction('ProcessRepliesAIGenerationFail', leadId, senderEmail, `AI follow-up generation failed (Sentiment: ${sentiment}). Needs manual review.`, 'ERROR');
+                }
             } else {
-              logAction('ProcessRepliesNeutral', leadId, senderEmail, 'Neutral reply received, requires manual review. Status not changed.', 'INFO');
-              // Optionally, change status to 'NEEDS_REVIEW'
-              // sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue('NEEDS_REVIEW'); 
-              // sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+                // Classification is null, "Generic Inquiry", no services, or neutral sentiment with generic inquiry etc.
+                let logDetail = `AI classification resulted in no automated follow-up. Sentiment: ${sentiment}.`;
+                if(classifiedData && classifiedData.summary_of_need) {
+                    logDetail += ` Summary: ${classifiedData.summary_of_need}`;
+                }
+                if(classifiedData && classifiedData.identified_services){
+                   logDetail += ` Services: ${classifiedData.identified_services.join(', ')}`;
+                }
+                logAction('ProcessRepliesAINoActionOrManual', leadId, senderEmail, logDetail + ' Requires manual review.', 'INFO');
+                // Optionally, change status to 'NEEDS_MANUAL_AI_REVIEW' or similar if not already UNQUALIFIED and not negative.
+                // This path is taken if sentiment is positive/neutral BUT services are generic/null.
             }
             
             thread.markRead();
@@ -350,5 +476,75 @@ function processReplies() {
   } else {
     logAction('ProcessRepliesLockError', null, null, 'Could not obtain lock for processReplies after 10 seconds. Processing run skipped.', 'ERROR');
     console.warn('Could not obtain lock for processReplies. Processing run skipped.');
+  }
+}
+
+// (Make sure getServiceClassificationPrompt is accessible, typically true in Apps Script if both are .js files in the same project)
+// (Make sure CONFIG is accessible)
+
+function classifyProspectReply(replyText, leadFirstName, interactionHistorySummary) { // NEW signature
+  try {
+    const serviceProfile = CONFIG.AI_SERVICES_PROFILE;
+    if (!serviceProfile) {
+      logAction('ClassifyProspectReplyError', null, null, 'CONFIG.AI_SERVICES_PROFILE is not defined.', 'ERROR');
+      console.error('ClassifyProspectReplyError: CONFIG.AI_SERVICES_PROFILE is not defined.');
+      return null;
+    }
+
+    const classificationPrompt = getServiceClassificationPrompt(replyText, leadFirstName, serviceProfile, interactionHistorySummary); // NEW: Pass interactionHistorySummary
+    logAction('ClassifyProspectReplyInfo', null, null, `Generated classification prompt: ${classificationPrompt.substring(0, 200)}...`, 'INFO'); // Log part of the prompt
+
+    const jsonStringResponse = getAIEmailContent(classificationPrompt); // Call modified getAIEmailContent
+
+    if (!jsonStringResponse) {
+      logAction('ClassifyProspectReplyError', null, null, 'Received null response from getAIEmailContent for classification.', 'ERROR');
+      console.error('ClassifyProspectReplyError: Received null response from getAIEmailContent for classification.');
+      return null;
+    }
+    // Log raw response
+    logAction('ClassifyProspectReplyRawResp', null, null, `Raw classification response snippet: ${jsonStringResponse.substring(0, 500)}`, 'DEBUG');
+
+    // logAction('ClassifyProspectReplyInfo', null, null, `Received JSON string for classification: ${jsonStringResponse.substring(0,200)}...`, 'INFO'); // This is now covered by RawResp and Parsed logs
+
+    // Attempt to parse the JSON, ensuring it's robust against malformed AI output
+    let classifiedData;
+    try {
+      classifiedData = JSON.parse(jsonStringResponse);
+    } catch (parseError) {
+      const parseErrorMessage = `Error parsing JSON response in classifyProspectReply: ${parseError.message}. Response string: ${jsonStringResponse}`;
+      logAction('ClassifyProspectReplyParseError', null, null, parseErrorMessage, 'ERROR');
+      console.error(parseErrorMessage);
+      // Try to extract content if it's a common markdown ```json ... ``` block
+      const match = jsonStringResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (match && match[1]) {
+        try {
+          classifiedData = JSON.parse(match[1]);
+          logAction('ClassifyProspectReplyParseRecovery', null, null, 'Successfully parsed JSON after extracting from markdown.', 'INFO');
+        } catch (nestedParseError) {
+          const nestedParseErrorMessage = `Error parsing JSON even after markdown extraction: ${nestedParseError.message}. Extracted string: ${match[1]}`;
+          logAction('ClassifyProspectReplyNestedParseError', null, null, nestedParseErrorMessage, 'ERROR');
+          console.error(nestedParseErrorMessage);
+          return null; // Give up if still can't parse
+        }
+      } else {
+        return null; // If not a markdown block, and initial parse failed, return null
+      }
+    }
+    // Log parsed data
+    logAction('ClassifyProspectReplyParsed', null, null, `Parsed classification data: ${JSON.stringify(classifiedData).substring(0,500)}`, 'DEBUG');
+    
+    logAction('ClassifyProspectReplySuccess', null, null, 'Successfully parsed classification response.', 'SUCCESS');
+    return classifiedData;
+
+  } catch (e) {
+    // Catch any other unexpected errors during the process
+    // Using jsonStringResponse in the error message might be problematic if it's not defined due to an error earlier in the try block.
+    // So, declare it outside or ensure it's handled. For simplicity, we'll rely on its scope if an error happens after its assignment.
+    // If getAIEmailContent fails and returns null, jsonStringResponse will be null.
+    const responseForError = typeof jsonStringResponse !== 'undefined' ? jsonStringResponse : 'N/A';
+    const errorMessage = `Error in classifyProspectReply: ${e.message}. Response string: ${responseForError}. Stack: ${e.stack}`;
+    logAction('ClassifyProspectReplyCritical', null, null, errorMessage, 'CRITICAL');
+    console.error(errorMessage);
+    return null;
   }
 }
