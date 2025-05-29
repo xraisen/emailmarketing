@@ -112,12 +112,14 @@ function getColumnIndexMap(headerRowArray) {
  * Respects daily quotas and batch sizes defined in CONFIG.
  */
 function dailyEmailBatch() {
-  logAction('DailyBatchStart', null, null, 'Daily email batch process started.', 'INFO');
-  let emailsSentThisExecution = 0;
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(10000)) { // Try to acquire lock for 10 seconds
+    try {
+      logAction('DailyBatchStart', null, null, 'Daily email batch process started with lock.', 'INFO');
+      let emailsSentThisExecution = 0;
 
-  try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
+      const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
     if (!sheet) {
       logAction('DailyBatchError', null, null, `Sheet '${LEADS_SHEET_NAME}' not found.`, 'ERROR');
       console.error(`Sheet '${LEADS_SHEET_NAME}' not found.`);
@@ -203,8 +205,155 @@ function dailyEmailBatch() {
     console.log(`Daily email batch finished. Total emails sent in this run: ${emailsSentThisExecution}`);
 
   } catch (e) {
-    const errorMessage = `Error in dailyEmailBatch: ${e.message} ${e.stack}`;
-    logAction('DailyBatchCriticalError', null, null, errorMessage, 'CRITICAL');
-    console.error(errorMessage);
+      logAction('DailyBatchEnd', null, null, `Daily email batch process finished. Emails sent in this run: ${emailsSentThisExecution}`, 'INFO');
+      console.log(`Daily email batch finished. Total emails sent in this run: ${emailsSentThisExecution}`);
+
+    } catch (e) {
+      const errorMessage = `Error in dailyEmailBatch: ${e.message} ${e.stack}`;
+      logAction('DailyBatchCriticalError', null, null, errorMessage, 'CRITICAL');
+      console.error(errorMessage);
+    } finally {
+      lock.releaseLock();
+      logAction('DailyBatchLockReleased', null, null, 'Lock released for dailyEmailBatch.', 'DEBUG');
+    }
+  } else {
+    logAction('DailyBatchLockError', null, null, 'Could not obtain lock for dailyEmailBatch after 10 seconds. Batch run skipped.', 'ERROR');
+    console.warn('Could not obtain lock for dailyEmailBatch. Batch run skipped.');
+  }
+}
+
+/**
+ * Processes unread email replies from leads.
+ */
+function processReplies() {
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(10000)) { // Try to acquire lock for 10 seconds
+    try {
+      logAction('ProcessRepliesStart', null, null, 'Hourly reply processing started with lock.', 'INFO');
+
+      const threads = GmailApp.search('is:unread in:inbox -is:trash', 0, 50);
+
+    if (!threads || threads.length === 0) {
+      logAction('ProcessRepliesNoNew', null, null, 'No new unread threads found.', 'INFO');
+      return;
+    }
+
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(LEADS_SHEET_NAME);
+    if (!sheet) {
+      logAction('ProcessRepliesError', null, null, `Sheet '${LEADS_SHEET_NAME}' not found.`, 'ERROR');
+      console.error(`Sheet '${LEADS_SHEET_NAME}' not found.`);
+      return;
+    }
+
+    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const colIdx = getColumnIndexMap(headerRow); // From Utilities.gs
+
+    const requiredSheetColumns = ['Email', 'Status', 'Last Contact', 'Lead ID', 'First Name', 'Last Service', 'Phone'];
+    for (const col of requiredSheetColumns) {
+      if (colIdx[col] === undefined) {
+        logAction('ProcessRepliesError', null, null, `Required column '${col}' not found in sheet for reply processing.`, 'ERROR');
+        return;
+      }
+    }
+    
+    const leadDataRange = sheet.getRange(2, 1, sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 1, sheet.getLastColumn());
+    const leadDataRows = sheet.getLastRow() > 1 ? leadDataRange.getValues() : [];
+
+
+    for (let i = 0; i < threads.length; i++) {
+      const thread = threads[i];
+      const messages = thread.getMessages();
+      if (messages.length === 0) continue;
+
+      const lastMessage = messages[messages.length - 1];
+      const fromHeader = lastMessage.getFrom();
+      const emailMatch = fromHeader.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+      
+      if (!emailMatch || emailMatch.length === 0) {
+        logAction('ProcessRepliesNoSender', null, null, 'Could not extract sender email from: ' + fromHeader + '. Subject: ' + lastMessage.getSubject(), 'WARNING');
+        thread.markRead(); // Mark as read to avoid reprocessing
+        continue;
+      }
+      const senderEmail = emailMatch[0].toLowerCase();
+      const body = lastMessage.getPlainBody().toLowerCase();
+
+      logAction('ProcessRepliesProcessing', null, senderEmail, 'Processing reply. Subject: ' + lastMessage.getSubject(), 'DEBUG');
+
+      let leadFoundAndProcessed = false;
+      for (let j = 0; j < leadDataRows.length; j++) {
+        const leadRow = leadDataRows[j];
+        const leadEmailInSheet = leadRow[colIdx['Email']];
+
+        if (leadEmailInSheet && typeof leadEmailInSheet === 'string' && leadEmailInSheet.toLowerCase() === senderEmail) {
+          const actualSheetRow = j + 2;
+          const leadId = leadRow[colIdx['Lead ID']];
+          const firstName = leadRow[colIdx['First Name']];
+          const lastService = leadRow[colIdx['Last Service']];
+          const phone = leadRow[colIdx['Phone']];
+          const currentStatus = leadRow[colIdx['Status']];
+
+          if (currentStatus === STATUS.SENT || currentStatus === STATUS.FOLLOW_UP_1) {
+            if (body.includes('yes') || body.includes('interested') || body.includes('i am interested') || body.includes("i'm interested")) {
+              sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.HOT);
+              sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+              
+              const calendlySubject = `Next Step: Book Your Free Audit for ${lastService}`;
+              const calendlyBody = `Hi ${firstName},\n\nGreat to hear you’re interested! You can book your free audit here: ${CONFIG.CALENDLY_LINK}\n\n${CONFIG.EMAIL_FOOTER}`;
+              
+              sendEmail(senderEmail, calendlySubject, calendlyBody, leadId);
+              sendPRAlert(firstName, lastService, senderEmail, phone, 'Pending', leadId);
+              logAction('ProcessRepliesHotLead', leadId, senderEmail, 'Lead marked HOT. Calendly link sent. PR alert triggered.', 'SUCCESS');
+            
+            } else if (body.includes('no') || body.includes('stop') || body.includes('unsubscribe') || body.includes('not interested')) {
+              sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue(STATUS.UNQUALIFIED);
+              sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+              logAction('ProcessRepliesUnqualified', leadId, senderEmail, 'Lead marked UNQUALIFIED.', 'SUCCESS');
+            
+            } else {
+              logAction('ProcessRepliesNeutral', leadId, senderEmail, 'Neutral reply received, requires manual review. Status not changed.', 'INFO');
+              // Optionally, change status to 'NEEDS_REVIEW'
+              // sheet.getRange(actualSheetRow, colIdx['Status'] + 1).setValue('NEEDS_REVIEW'); 
+              // sheet.getRange(actualSheetRow, colIdx['Last Contact'] + 1).setValue(new Date());
+            }
+            
+            thread.markRead();
+            SpreadsheetApp.flush(); 
+            leadFoundAndProcessed = true;
+            break; // Break from inner lead search loop
+
+          } else {
+            logAction('ProcessRepliesWrongStatus', leadId, senderEmail, 'Reply from lead with status ' + currentStatus + '. No action taken for this reply.', 'INFO');
+            thread.markRead(); // Mark as read to avoid reprocessing this specific email
+            leadFoundAndProcessed = true; // Consider it processed for this email, even if no action on lead status
+            break; 
+          }
+        }
+      } // End of leads loop
+
+      if (!leadFoundAndProcessed) {
+          // If the sender was not found in the leads sheet, or if it was found but not processed (e.g. wrong status and already marked read)
+          logAction('ProcessRepliesSenderNotFoundOrNotActionable', null, senderEmail, 'Sender not found in leads sheet or reply already handled/not actionable for status update. Subject: ' + lastMessage.getSubject(), 'INFO');
+          // Mark the thread as read to avoid it being picked up again by the general "is:unread" search if no specific lead action was taken
+          // but the lead was found and its status was not SENT/FOLLOW_UP_1.
+          // If truly not found, this also marks it as read.
+          thread.markRead(); 
+      }
+    } // End of threads loop
+
+  } catch (e) {
+      logAction('ProcessRepliesEnd', null, null, 'Hourly reply processing finished.', 'INFO');
+
+    } catch (e) {
+      const errorMessage = `Error in processReplies: ${e.message} ${e.stack}`;
+      logAction('ProcessRepliesCriticalError', null, null, errorMessage, 'CRITICAL');
+      console.error(errorMessage);
+    } finally {
+      lock.releaseLock();
+      logAction('ProcessRepliesLockReleased', null, null, 'Lock released for processReplies.', 'DEBUG');
+    }
+  } else {
+    logAction('ProcessRepliesLockError', null, null, 'Could not obtain lock for processReplies after 10 seconds. Processing run skipped.', 'ERROR');
+    console.warn('Could not obtain lock for processReplies. Processing run skipped.');
   }
 }
