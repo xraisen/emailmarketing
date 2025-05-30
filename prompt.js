@@ -158,11 +158,8 @@ function getInitialEmailPrompt(firstName, lastService) {
 Start with "Hi ${firstName},".
 Focus on being helpful and providing clear value regarding the free audit.
 Avoid using overly salesy language, hype, or common spam-trigger words (e.g., 'guaranteed', 'urgent action required', 'limited time').
-Focus on being helpful and providing clear value regarding the free audit.
-Avoid using overly salesy language, hype, or common spam-trigger words (e.g., 'guaranteed', 'urgent action required', 'limited time').
 If the email content forms more than one paragraph, ensure paragraphs are separated by a blank line (a double newline).
 Keep sentences and paragraphs concise for easy reading in plain text.
-Maintain a professional and friendly tone. Vary phrasing for randomness. Keep it human and professional.
 Maintain a professional and friendly tone. Vary phrasing for randomness. Keep it human and professional.
 End the email content with a suitable closing like 'Best regards,' or 'Thanks,' then on the next line, the name "${YOUR_NAME_FOR_INITIAL_EMAIL}".
 Do NOT add any unsubscribe footer; the system will append it.`;
@@ -176,7 +173,7 @@ function getServiceClassificationPrompt(replyText, leadFirstName, serviceProfile
       descriptionSnippet = serviceProfile[serviceName].description.substring(0, 100) + "...";
     }
     return `- ${serviceName}: ${descriptionSnippet}`;
-  }).join('\n'); // Note: Use double backslash for newline in a single-line string representation if this were for a system that needs it; for Apps Script, '\n' is fine.
+  }).join('\n');
 
   // Construct the history part of the prompt, only if interactionHistorySummary has content.
   const historyPromptSection = (interactionHistorySummary && interactionHistorySummary.trim() !== "") ?
@@ -186,8 +183,25 @@ ${interactionHistorySummary}
 ` : "";
 
   return `
-${historyPromptSection}Prospect ${leadFirstName} replied with: \"${replyText}\"
-`;
+${historyPromptSection}Prospect ${leadFirstName} replied with: "${replyText}"
+
+My available services are:
+${servicesList}
+
+Based on the prospect's reply (considering any previous interactions if summarized), identify the primary service(s) they are interested in from the list above.
+Also, list any specific problems or questions they mentioned in their *latest* reply.
+Analyze the overall sentiment of the prospect's *latest* reply and classify it as "positive", "neutral", or "negative".
+If their inquiry is unclear or doesn't match a specific service, classify services as "Generic Inquiry".
+
+Respond in JSON format with the following structure:
+{
+  "identified_services": ["Service Name 1", "Service Name 2"],
+  "key_concerns": ["Concern 1", "Concern 2"], // From the latest reply
+  "summary_of_need": "A specific and actionable summary of what the prospect is explicitly asking for in their latest reply. Focus on key questions or desired outcomes they've stated.",
+  "sentiment": "positive", // "positive", "neutral", or "negative"
+  "classification_confidence": 0.85 // Your self-assessed confidence (0.0 to 1.0) in the accuracy of identified_services, key_concerns, and summary_of_need based on the reply. Be realistic: use lower scores if the reply is very short, ambiguous, or if your interpretation relies heavily on assumptions.
+}
+  `;
 }
 
 // Make sure CONFIG is accessible if you plan to use CONFIG.EMAIL_FOOTER directly in the prompt.
@@ -213,7 +227,7 @@ function getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, se
   const summaryOfNeedText = (classifiedData && classifiedData.summary_of_need) ? classifiedData.summary_of_need : 'their general interest in my services.';
 
   // Construct the history part of the prompt, only if interactionHistorySummary has content.
-const historyPromptSection = (interactionHistorySummary && interactionHistorySummary.trim() !== "") ?
+  const historyPromptSection = (interactionHistorySummary && interactionHistorySummary.trim() !== "") ?
 `My name is ${yourName}.
 Here's a summary of my past interactions with ${leadFirstName}:
 ${interactionHistorySummary}
@@ -235,16 +249,13 @@ Write a helpful, expert-toned follow-up email to ${leadFirstName}.
 Maintain a professional, consultative, and trustworthy tone throughout. The goal is to be genuinely helpful and demonstrate expertise based *only* on the information provided.
 Do NOT use spammy phrases, hype, exaggerated claims, or excessive exclamation marks. Avoid creating a sense of false urgency or making unrealistic promises.
 
-Maintain a professional, consultative, and trustworthy tone throughout. The goal is to be genuinely helpful and demonstrate expertise based *only* on the information provided.
-Do NOT use spammy phrases, hype, exaggerated claims, or excessive exclamation marks. Avoid creating a sense of false urgency or making unrealistic promises.
-
 Start with "Hi ${leadFirstName},".
 Separate all paragraphs with a blank line (a double newline). Use short paragraphs (1-3 sentences).
 If you include a list, use hyphenated bullet points (e.g., "- Item 1"), with each item on a new line. Ensure a blank line before and after the list if it's between paragraphs.
 
 Acknowledge their LATEST reply and specific concerns.
 If there's relevant history, subtly weave it in to show you remember them (e.g., "Following up on our previous discussion about X..."). If their latest reply introduces a new topic clearly distinct from the history, a brief acknowledgment of this shift can be good before addressing the new points.
-Base your explanation of how you can help strictly on the prospect's \`classifiedData\` (their needs and concerns) and the service descriptions in your \`serviceProfile\`. Do not offer services, suggest solutions, or make claims not directly supported by these inputs.
+Base your explanation of how you can help strictly on the prospect's 'classifiedData' (their needs and concerns) and the service descriptions in your 'serviceProfile'. Do not offer services, suggest solutions, or make claims not directly supported by these inputs.
 Briefly explain how I can help with the identified service(s)/concerns from their latest reply, drawing from my expertise.
 When you suggest a meeting, clearly state that a Calendly link will be provided by the system. Ensure this call to action (mentioning the system will provide the link) is distinct, perhaps as its own paragraph or clearly separated.
 The email should be concise, professional, and encouraging.
@@ -261,10 +272,8 @@ Do NOT add any unsubscribe footer or any other text after your name; the system 
  */
 function getFollowUpEmailPrompt(firstName, lastService) {
   // New prompt based on revised instructions for getFollowUpEmailPrompt
-return `Write a unique, extremely concise (2-4 sentences total) follow-up email to ${firstName} about ${lastService}. Remind them of the free audit.
+  return `Write a unique, extremely concise (2-4 sentences total) follow-up email to ${firstName} about ${lastService}. Remind them of the free audit.
 Start with "Hi ${firstName},".
-The reminder should be gentle and value-focused.
-Avoid language that sounds demanding. Do not use spam-trigger words (e.g., 'last chance', 'don't miss out', 'act now'). Focus on being helpful and maintaining a professional, friendly tone.
 The reminder should be gentle and value-focused.
 Avoid language that sounds demanding. Do not use spam-trigger words (e.g., 'last chance', 'don't miss out', 'act now'). Focus on being helpful and maintaining a professional, friendly tone.
 If the email content forms more than one paragraph, ensure paragraphs are separated by a blank line (a double newline).
