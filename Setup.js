@@ -8,10 +8,18 @@ function initializeSheets() {
   logAction('InitializeSheets', null, null, 'Starting sheet initialization.', 'INFO');
 
   try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    // Use getConfigValue to safely access CONFIG values
+    const spreadsheetId = getConfigValue('SPREADSHEET_ID');
+    if (!spreadsheetId) {
+      logAction('InitializeSheets', null, null, 'SPREADSHEET_ID not set in CONFIG', 'ERROR');
+      console.error('SPREADSHEET_ID not set in CONFIG');
+      return;
+    }
+    
+    const ss = SpreadsheetApp.openById(spreadsheetId);
     if (!ss) {
-      logAction('InitializeSheets', null, null, `Failed to open spreadsheet with ID: ${CONFIG.SPREADSHEET_ID}`, 'ERROR');
-      console.error(`Failed to open spreadsheet with ID: ${CONFIG.SPREADSHEET_ID}`);
+      logAction('InitializeSheets', null, null, `Failed to open spreadsheet with ID: ${spreadsheetId}`, 'ERROR');
+      console.error(`Failed to open spreadsheet with ID: ${spreadsheetId}`);
       return;
     }
 

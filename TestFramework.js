@@ -3,6 +3,7 @@
 // --- Assertion Helpers ---
 function assertEqual(actual, expected, message) {
   const pass = actual === expected;
+  const pass = actual === expected;
   if (typeof actual === 'object' && typeof expected === 'object' && actual !== null && expected !== null) {
     // Basic JSON stringify comparison for objects/arrays
     if (JSON.stringify(actual) === JSON.stringify(expected)) {
@@ -49,6 +50,16 @@ const __originalSTATUS = typeof STATUS !== 'undefined' ? STATUS : undefined;
 const __originalLEADS_SHEET_NAME = typeof LEADS_SHEET_NAME !== 'undefined' ? LEADS_SHEET_NAME : undefined;
 const __originalLOGS_SHEET_NAME = typeof LOGS_SHEET_NAME !== 'undefined' ? LOGS_SHEET_NAME : undefined;
 const __originalLockService = typeof LockService !== 'undefined' ? LockService : undefined;
+const __originalSpreadsheetApp = typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp : undefined;
+const __originalGmailApp = typeof GmailApp !== 'undefined' ? GmailApp : undefined;
+const __originalUrlFetchApp = typeof UrlFetchApp !== 'undefined' ? UrlFetchApp : undefined;
+const __originalUtilities = typeof Utilities !== 'undefined' ? Utilities : undefined;
+const __originalLogger = typeof Logger !== 'undefined' ? Logger : undefined;
+const __originalCONFIG = typeof CONFIG !== 'undefined' ? CONFIG : undefined;
+const __originalSTATUS = typeof STATUS !== 'undefined' ? STATUS : undefined;
+const __originalLEADS_SHEET_NAME = typeof LEADS_SHEET_NAME !== 'undefined' ? LEADS_SHEET_NAME : undefined;
+const __originalLOGS_SHEET_NAME = typeof LOGS_SHEET_NAME !== 'undefined' ? LOGS_SHEET_NAME : undefined;
+const __originalLockService = typeof LockService !== 'undefined' ? LockService : undefined;
 
 
 // Global map to store original functions that might be mocked by tests using mockFunction(this, 'functionName', ...)
@@ -56,6 +67,7 @@ var __globalOriginals = {}; // Use var for Apps Script global behavior if not in
 
 // Mock for SpreadsheetApp
 var MockSpreadsheetApp = {
+  _sheetsData: {}, // {"spreadsheetId": {"sheetName": {data: [[]], lastRow: X, lastCol: Y, _lastSetValue: null, _appendedRows: []}}}
   _sheetsData: {}, // {"spreadsheetId": {"sheetName": {data: [[]], lastRow: X, lastCol: Y, _lastSetValue: null, _appendedRows: []}}}
   _currentSpreadsheetId: null,
   _currentSheetName: null,
@@ -75,6 +87,7 @@ var MockSpreadsheetApp = {
       this._sheetsData[this._currentSpreadsheetId][name] = { data: [[]], lastRow: 0, lastCol: 0, _lastSetValue: null, _appendedRows: [] };
     }
     const sheetMockData = this._sheetsData[this._currentSpreadsheetId][name];
+    const sheetMockData = this._sheetsData[this._currentSpreadsheetId][name];
     return {
       getDataRange: function() {
         return {
@@ -92,7 +105,9 @@ var MockSpreadsheetApp = {
             Logger.log(`[MOCK SPREADSHEET] setValue on ${name} at R${row}C${col} = ${value}`);
             if (!sheetMockData.data[row-1]) {
                 for(let r_idx = sheetMockData.data.length; r_idx < row; r_idx++) sheetMockData.data.push([]);
+                for(let r_idx = sheetMockData.data.length; r_idx < row; r_idx++) sheetMockData.data.push([]);
             }
+            for(let c_idx = (sheetMockData.data[row-1] ? sheetMockData.data[row-1].length : 0); c_idx < col; c_idx++) sheetMockData.data[row-1].push("");
             for(let c_idx = (sheetMockData.data[row-1] ? sheetMockData.data[row-1].length : 0); c_idx < col; c_idx++) sheetMockData.data[row-1].push("");
             sheetMockData.data[row-1][col-1] = value;
             sheetMockData._lastSetValue = {row: row, col: col, value: value, sheetName: name};
@@ -166,6 +181,7 @@ var MockGmailApp = {
   },
   _addMockThread: function(threadData) { // threadData = {messages: [{body, from, date}], queryMatcher: func}
       const mockMessages = (threadData.messages || []).map(m => ({
+      const mockMessages = (threadData.messages || []).map(m => ({
           getPlainBody: () => m.body || "",
           getFrom: () => m.from || "",
           getDate: () => m.date || new Date(),
@@ -190,7 +206,9 @@ var MockUrlFetchApp = {
         this._lastFetchUrl = url;
         this._lastFetchParams = params;
         for (const pattern in this._mockResponses) {
+        for (const pattern in this._mockResponses) {
             if (url.includes(pattern)) {
+                const mockResp = this._mockResponses[pattern];
                 const mockResp = this._mockResponses[pattern];
                 return {
                     getResponseCode: () => mockResp.responseCode || 200,
@@ -208,6 +226,9 @@ var MockUrlFetchApp = {
 
 // Mock for Utilities
 var MockUtilities = {
+    formatDate: (date, tz, format) => new Date(date).toISOString().substring(0,19).replace('T',' ') + " GMT", // Simple mock
+    sleep: (ms) => Logger.log(`[MOCK UTILITIES] sleep for ${ms}ms`),
+    getUuid: () => 'mock-uuid-' + Math.random().toString(36).substring(2,9)
     formatDate: (date, tz, format) => new Date(date).toISOString().substring(0,19).replace('T',' ') + " GMT", // Simple mock
     sleep: (ms) => Logger.log(`[MOCK UTILITIES] sleep for ${ms}ms`),
     getUuid: () => 'mock-uuid-' + Math.random().toString(36).substring(2,9)
@@ -261,6 +282,7 @@ function teardownTestMocks() {
 
   // Restore functions mocked using mockFunction(this, ...)
   for (const funcName in __globalOriginals) {
+  for (const funcName in __globalOriginals) {
     if (this.hasOwnProperty(funcName) && __globalOriginals.hasOwnProperty(funcName)) {
       this[funcName] = __globalOriginals[funcName].original;
       Logger.log(`[TEST TEARDOWN] Restored global function: ${funcName}`);
@@ -271,6 +293,8 @@ function teardownTestMocks() {
 
 // General purpose mockFunction that stores original in __globalOriginals
 function mockFunction(obj, functionName, mockImplementation) {
+    const globalFuncName = (obj === this || obj === globalThis) ? functionName : null; // 'this' in Apps Script global scope
+    const original = globalFuncName ? (obj[functionName] || undefined) : (obj ? obj[functionName] : undefined);
     const globalFuncName = (obj === this || obj === globalThis) ? functionName : null; // 'this' in Apps Script global scope
     const original = globalFuncName ? (obj[functionName] || undefined) : (obj ? obj[functionName] : undefined);
 
@@ -353,6 +377,8 @@ function test_getLeadInteractionHistory_NoHistory() {
   setupTestMocks();
   const leadId = "LID_NoHistory"; const email = "nohistory@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID; // Use mocked CONFIG
+  const leadId = "LID_NoHistory"; const email = "nohistory@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID; // Use mocked CONFIG
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
     ["Lead ID", "Email", "First Name", "Status"], [leadId, email, "NoHistoryLead", STATUS.PENDING]
@@ -362,6 +388,7 @@ function test_getLeadInteractionHistory_NoHistory() {
   ]);
   MockGmailApp._clearMockData(); // Ensure no threads
 
+  const history = getLeadInteractionHistory(leadId, email); // Test the real function
   const history = getLeadInteractionHistory(leadId, email); // Test the real function
   
   assertNotNull(history, "History should not be null");
@@ -378,6 +405,8 @@ function test_getLeadInteractionHistory_LogsOnly() {
   setupTestMocks();
   const leadId = "LID_LogsOnly"; const email = "logsonly@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+  const leadId = "LID_LogsOnly"; const email = "logsonly@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
     ["Lead ID", "Email", "First Name", "Status"], [leadId, email, "LogsOnlyLead", STATUS.SENT]
@@ -392,6 +421,7 @@ function test_getLeadInteractionHistory_LogsOnly() {
   MockGmailApp._clearMockData();
 
   const history = getLeadInteractionHistory(leadId, email);
+  const history = getLeadInteractionHistory(leadId, email);
   
   assertNotNull(history, "History should not be null");
   assertTrue(history.includes("Recent Logs:"), "History for logs only should contain 'Recent Logs:' header.");
@@ -405,6 +435,8 @@ function test_getLeadInteractionHistory_LogsOnly() {
 function test_getLeadInteractionHistory_GmailOnly() {
   Logger.log("\nRunning test_getLeadInteractionHistory_GmailOnly...");
   setupTestMocks();
+  const leadId = "LID_GmailOnly"; const email = "gmailonly@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
   const leadId = "LID_GmailOnly"; const email = "gmailonly@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
 
@@ -426,8 +458,10 @@ function test_getLeadInteractionHistory_GmailOnly() {
           { body: emailBody2, date: emailDate2, from: "me@example.com" }
       ],
       queryMatcher: (q) => q.includes(email)
+      queryMatcher: (q) => q.includes(email)
   });
   
+  const history = getLeadInteractionHistory(leadId, email);
   const history = getLeadInteractionHistory(leadId, email);
   
   assertNotNull(history, "History should not be null");
@@ -449,6 +483,8 @@ function test_getLeadInteractionHistory_GmailOnly() {
 function test_getLeadInteractionHistory_FullHistory() {
   Logger.log("\nRunning test_getLeadInteractionHistory_FullHistory...");
   setupTestMocks();
+  const leadId = "LID_FullHistory"; const email = "fullhistory@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
   const leadId = "LID_FullHistory"; const email = "fullhistory@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
 
@@ -481,8 +517,10 @@ function test_getLeadInteractionHistory_FullHistory() {
         { body: "Even earlier email (should not appear).", date: new Date(2023,3,3), from: email } // Excluded by 2-email limit
     ],
     queryMatcher: (q) => q.includes(email)
+    queryMatcher: (q) => q.includes(email)
   });
   
+  const history = getLeadInteractionHistory(leadId, email); 
   const history = getLeadInteractionHistory(leadId, email); 
   
   assertNotNull(history, "History should not be null");
@@ -520,6 +558,13 @@ function test_processReplies_UsesHistoryForAIClassification() {
     const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
     const serviceName = "Specific Service";
     const mockCalendlyLink = "https://calendly.com/specific-service-test";
+    const leadId = "LID_ProcessHistory"; const leadEmail = "processhistory@example.com"; const leadFirstName = "ProcessHist";
+    const mockReplyBody = "Yes, I'm interested. Tell me more.";
+    const interactionHistorySummaryTestString = "Test interaction history: Previously discussed X, Y, Z.";
+    const MAX_HISTORY_LENGTH_FOR_TEST = 2000; 
+    const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+    const serviceName = "Specific Service";
+    const mockCalendlyLink = "https://calendly.com/specific-service-test";
 
     CONFIG.AI_SERVICES_PROFILE = { 
         [serviceName]: { calendlyLink: mockCalendlyLink, description: "Test Service Desc" }, 
@@ -539,23 +584,31 @@ function test_processReplies_UsesHistoryForAIClassification() {
     MockGmailApp._addMockThread({
         messages: [{ body: mockReplyBody, from: leadEmail, date: new Date(), isUnread: true }],
         queryMatcher: (q) => q.includes("is:unread") 
+        queryMatcher: (q) => q.includes("is:unread") 
     });
      MockGmailApp._addMockThread({ 
         messages: [{ body: mockReplyBody, from: leadEmail, date: new Date() }],
+        queryMatcher: (q) => q.includes(leadEmail)
         queryMatcher: (q) => q.includes(leadEmail)
     });
 
 
     let receivedHistoryForClassification = null; let receivedHistoryForFollowUp = null;
     let sendEmailCalledArgs = null; let sendPRAlertCalledArgs = null;
+    let receivedHistoryForClassification = null; let receivedHistoryForFollowUp = null;
+    let sendEmailCalledArgs = null; let sendPRAlertCalledArgs = null;
 
+    const mockGetLeadInteractionHistory = mockFunction(this, 'getLeadInteractionHistory', (id, emailArg) => {
     const mockGetLeadInteractionHistory = mockFunction(this, 'getLeadInteractionHistory', (id, emailArg) => {
         return interactionHistorySummaryTestString; 
     });
     const mockClassifyProspectReply = mockFunction(this, 'classifyProspectReply', (reply, name, history) => {
+    const mockClassifyProspectReply = mockFunction(this, 'classifyProspectReply', (reply, name, history) => {
         receivedHistoryForClassification = history; 
         return { identified_services: [serviceName], key_concerns: ["Concern A"], summary_of_need: "Needs Specific Service", sentiment: "positive", classification_confidence: 0.9 };
     });
+    const mockRawAIBody = "This is the raw AI body.\nIt might have single newlines.";
+    const mockGenerateAIContextualFollowUp = mockFunction(this, 'generateAIContextualFollowUp', (classifiedData, name, yourName, serviceProfile, history) => {
     const mockRawAIBody = "This is the raw AI body.\nIt might have single newlines.";
     const mockGenerateAIContextualFollowUp = mockFunction(this, 'generateAIContextualFollowUp', (classifiedData, name, yourName, serviceProfile, history) => {
         receivedHistoryForFollowUp = history; 
@@ -564,14 +617,20 @@ function test_processReplies_UsesHistoryForAIClassification() {
     
     // Capture the arguments to sendEmail
     const mockSendEmail = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
+    const mockSendEmail = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
       if (to === leadEmail) { // Only capture emails sent to the prospect for this test
         sendEmailCalledArgs = {to,subject,body,id};
       }
       return true; 
     });
     const mockSendPRAlert = mockFunction(this, 'sendPRAlert', (fn, svc, em, ph, type, id) => { sendPRAlertCalledArgs = {fn, svc, em, ph, type, id}; });
+    const mockSendPRAlert = mockFunction(this, 'sendPRAlert', (fn, svc, em, ph, type, id) => { sendPRAlertCalledArgs = {fn, svc, em, ph, type, id}; });
     
     // Use REAL formatPlainTextEmailBody and truncateString for this test, assuming they are in Utilities.js
+    const originalFormatEmailBody = this.formatPlainTextEmailBody; // Store original if it's global
+    const originalTruncateString = this.truncateString;
+    this.formatPlainTextEmailBody = (typeof formatPlainTextEmailBody === 'function') ? formatPlainTextEmailBody : (raw) => raw.replace(/\n/g, '\n\n'); // Fallback if not global
+    this.truncateString = (typeof truncateString === 'function') ? truncateString : (str) => str;
     const originalFormatEmailBody = this.formatPlainTextEmailBody; // Store original if it's global
     const originalTruncateString = this.truncateString;
     this.formatPlainTextEmailBody = (typeof formatPlainTextEmailBody === 'function') ? formatPlainTextEmailBody : (raw) => raw.replace(/\n/g, '\n\n'); // Fallback if not global
@@ -586,12 +645,16 @@ function test_processReplies_UsesHistoryForAIClassification() {
     }
 
     const truncatedExpectedHistory = this.truncateString(interactionHistorySummaryTestString, MAX_HISTORY_LENGTH_FOR_TEST, " [History truncated]");
+    const truncatedExpectedHistory = this.truncateString(interactionHistorySummaryTestString, MAX_HISTORY_LENGTH_FOR_TEST, " [History truncated]");
     assertEqual(receivedHistoryForClassification, truncatedExpectedHistory, "classifyProspectReply should receive the (potentially truncated) history string.");
     assertEqual(receivedHistoryForFollowUp, truncatedExpectedHistory, "generateAIContextualFollowUp should receive the (potentially truncated) history string.");
     
     assertNotNull(sendEmailCalledArgs, "sendEmail should have been called for the prospect.");
     if(sendEmailCalledArgs) {
       assertEqual(sendEmailCalledArgs.to, leadEmail, "sendEmail TO address check");
+      const expectedFormattedAIBody = formatPlainTextEmailBody(mockRawAIBody);
+      const expectedCalendlySentence = "Here’s the link to book a meeting: " + mockCalendlyLink;
+      const expectedFullBody = expectedFormattedAIBody + "\n\n" + expectedCalendlySentence + "\n\n" + CONFIG.EMAIL_FOOTER;
       const expectedFormattedAIBody = formatPlainTextEmailBody(mockRawAIBody);
       const expectedCalendlySentence = "Here’s the link to book a meeting: " + mockCalendlyLink;
       const expectedFullBody = expectedFormattedAIBody + "\n\n" + expectedCalendlySentence + "\n\n" + CONFIG.EMAIL_FOOTER;
@@ -602,6 +665,7 @@ function test_processReplies_UsesHistoryForAIClassification() {
     assertNotNull(sendPRAlertCalledArgs, "sendPRAlert should have been called.");
     if(sendPRAlertCalledArgs) assertEqual(sendPRAlertCalledArgs.em, leadEmail, "sendPRAlert email check");
 
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(testSpreadsheetId, LEADS_SHEET_NAME);
     const lastSetValue = MockSpreadsheetApp._getLastSetValue(testSpreadsheetId, LEADS_SHEET_NAME);
     assertNotNull(lastSetValue, "Sheet status should have been updated");
     if (lastSetValue) assertEqual(lastSetValue.value, STATUS.HOT, "Lead status should be updated to HOT");
