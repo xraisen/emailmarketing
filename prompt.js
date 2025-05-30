@@ -1,4 +1,4 @@
-// FILE: prompt.js
+// File: prompt.js
 // --- PLAIN TEXT EMAIL FORMATTING STANDARDS & GUIDELINES ---
 //
 // PURPOSE:
@@ -138,13 +138,10 @@
 // automated email communication system.
 // -----------------------------------------------------------------------------------------
 
-// File: prompt.gs - AI system prompts
+// File: prompt.js - AI system prompts
 
-// const INITIAL_EMAIL_PROMPT_TEMPLATE = "Write a unique 2-line email to ${firstName} about ${lastService}. Offer a free audit. Vary tone (e.g., professional, friendly, urgent) and phrasing for randomness. Keep it human, concise, and professional. Include \"Reply STOP to unsubscribe\" at the end."; // OLD
-// const FOLLOW_UP_EMAIL_PROMPT_TEMPLATE = "Write a unique 2-line follow-up email to ${firstName} about ${lastService}. Remind them of the free audit. Vary tone and phrasing, distinct from the initial email. Keep it human, concise, and professional. Include \"Reply STOP to unsubscribe\" at the end."; // OLD
-
-const YOUR_NAME_FOR_INITIAL_EMAIL = "Jose"; // As per instruction for now
-const YOUR_NAME_FOR_FOLLOWUP_EMAIL = "Jose"; // As per instruction for now
+const YOUR_NAME_FOR_INITIAL_EMAIL = "Jose";
+const YOUR_NAME_FOR_FOLLOWUP_EMAIL = "Jose";
 
 /**
  * Generates the prompt for an initial email.
@@ -153,7 +150,6 @@ const YOUR_NAME_FOR_FOLLOWUP_EMAIL = "Jose"; // As per instruction for now
  * @return {string} The formatted prompt string.
  */
 function getInitialEmailPrompt(firstName, lastService) {
-  // New prompt based on revised instructions
   return `Write a unique, extremely concise (2-4 sentences total) cold email to ${firstName} about ${lastService}. Offer a free audit.
 Start with "Hi ${firstName},".
 Focus on being helpful and providing clear value regarding the free audit.
@@ -165,23 +161,25 @@ End the email content with a suitable closing like 'Best regards,' or 'Thanks,' 
 Do NOT add any unsubscribe footer; the system will append it.`;
 }
 
-function getServiceClassificationPrompt(replyText, leadFirstName, serviceProfile, interactionHistorySummary) { // Added interactionHistorySummary
+/**
+ * Generates the prompt for classifying a prospect's reply.
+ * @param {string} replyText The text of the prospect's reply.
+ * @param {string} leadFirstName The first name of the lead.
+ * @param {Object} serviceProfile The profile of available services.
+ * @param {string} interactionHistorySummary Summary of past interactions.
+ * @return {string} The formatted prompt string.
+ */
+function getServiceClassificationPrompt(replyText, leadFirstName, serviceProfile, interactionHistorySummary) {
   let servicesList = Object.keys(serviceProfile).map(serviceName => {
-    // Ensure serviceProfile[serviceName] and its description exist before trying to access substring
     let descriptionSnippet = "No description available.";
     if (serviceProfile[serviceName] && serviceProfile[serviceName].description) {
       descriptionSnippet = serviceProfile[serviceName].description.substring(0, 100) + "...";
     }
     return `- ${serviceName}: ${descriptionSnippet}`;
-  }).join('\n'); // Note: Use double backslash for newline in a single-line string representation if this were for a system that needs it; for Apps Script, '
-' is fine.
+  }).join('\n');
 
-  // Construct the history part of the prompt, only if interactionHistorySummary has content.
   const historyPromptSection = (interactionHistorySummary && interactionHistorySummary.trim() !== "") ?
-`Previous interaction summary with ${leadFirstName}:
-${interactionHistorySummary}
----
-` : "";
+    `Previous interaction summary with ${leadFirstName}:\n${interactionHistorySummary}\n---\n` : "";
 
   return `
 ${historyPromptSection}Prospect ${leadFirstName} replied with: "${replyText}"
@@ -197,65 +195,41 @@ If their inquiry is unclear or doesn't match a specific service, classify servic
 Respond in JSON format with the following structure:
 {
   "identified_services": ["Service Name 1", "Service Name 2"],
-  "key_concerns": ["Concern 1", "Concern 2"], // From the latest reply
+  "key_concerns": ["Concern 1", "Concern 2"],
   "summary_of_need": "A specific and actionable summary of what the prospect is explicitly asking for in their latest reply. Focus on key questions or desired outcomes they've stated.",
-  "sentiment": "positive", // "positive", "neutral", or "negative"
-  "classification_confidence": 0.85 // Your self-assessed confidence (0.0 to 1.0) in the accuracy of identified_services, key_concerns, and summary_of_need based on the reply. Be realistic: use lower scores if the reply is very short, ambiguous, or if your interpretation relies heavily on assumptions.
+  "sentiment": "positive",
+  "classification_confidence": 0.85
 }
-  `;
-${historyPromptSection}Prospect ${leadFirstName} replied with: "${replyText}"
-
-My available services are:
-${servicesList}
-
-Based on the prospect's reply (considering any previous interactions if summarized), identify the primary service(s) they are interested in from the list above.
-Also, list any specific problems or questions they mentioned in their *latest* reply.
-Analyze the overall sentiment of the prospect's *latest* reply and classify it as "positive", "neutral", or "negative".
-If their inquiry is unclear or doesn't match a specific service, classify services as "Generic Inquiry".
-
-Respond in JSON format with the following structure:
-{
-  "identified_services": ["Service Name 1", "Service Name 2"],
-  "key_concerns": ["Concern 1", "Concern 2"], // From the latest reply
-  "summary_of_need": "A specific and actionable summary of what the prospect is explicitly asking for in their latest reply. Focus on key questions or desired outcomes they've stated.",
-  "sentiment": "positive", // "positive", "neutral", or "negative"
-  "classification_confidence": 0.85 // Your self-assessed confidence (0.0 to 1.0) in the accuracy of identified_services, key_concerns, and summary_of_need based on the reply. Be realistic: use lower scores if the reply is very short, ambiguous, or if your interpretation relies heavily on assumptions.
-}
-  `;
+`;
 }
 
-// Make sure CONFIG is accessible if you plan to use CONFIG.EMAIL_FOOTER directly in the prompt.
-// However, it's better practice to pass it in or append it later in the email construction process.
-// For this task, the prompt string will include a placeholder for the email footer
-// or expect it to be appended by the calling function.
-// The issue description shows "${CONFIG.EMAIL_FOOTER}" directly in the prompt.
-
-function getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) { // Added interactionHistorySummary
+/**
+ * Generates the prompt for a contextual follow-up email.
+ * @param {Object} classifiedData The classified data from the prospect's reply.
+ * @param {string} leadFirstName The first name of the lead.
+ * @param {string} yourName The sender's name.
+ * @param {Object} serviceProfile The profile of available services.
+ * @param {string} interactionHistorySummary Summary of past interactions.
+ * @return {string} The formatted prompt string.
+ */
+function getContextualFollowUpPrompt(classifiedData, leadFirstName, yourName, serviceProfile, interactionHistorySummary) {
   let relevantServiceDetails = "";
   if (classifiedData && classifiedData.identified_services && classifiedData.identified_services.length > 0) {
     relevantServiceDetails = classifiedData.identified_services.map(serviceName => {
       if (serviceProfile[serviceName] && serviceProfile[serviceName].description) {
         return `Regarding ${serviceName}: ${serviceProfile[serviceName].description}`;
       }
-      return ""; // Return empty string if service or its description isn't found
-    }).filter(detail => detail !== "").join('\n\n'); // Ensure only non-empty details are joined, and use double newlines for separation
+      return "";
+    }).filter(detail => detail !== "").join('\n\n');
   }
 
-  // Ensure classifiedData and its properties are defined before accessing them
   const identifiedServicesText = (classifiedData && classifiedData.identified_services && classifiedData.identified_services.length > 0) ? classifiedData.identified_services.join(', ') : 'services I offer';
   const keyConcernsText = (classifiedData && classifiedData.key_concerns && classifiedData.key_concerns.length > 0) ? classifiedData.key_concerns.join(', ') : 'not explicitly stated, but they replied positively';
   const summaryOfNeedText = (classifiedData && classifiedData.summary_of_need) ? classifiedData.summary_of_need : 'their general interest in my services.';
 
-  // Construct the history part of the prompt, only if interactionHistorySummary has content.
   const historyPromptSection = (interactionHistorySummary && interactionHistorySummary.trim() !== "") ?
-  const historyPromptSection = (interactionHistorySummary && interactionHistorySummary.trim() !== "") ?
-`My name is ${yourName}.
-Here's a summary of my past interactions with ${leadFirstName}:
-${interactionHistorySummary}
----
-` : `My name is ${yourName}.
-I previously sent a cold email to ${leadFirstName}.
-`;
+    `My name is ${yourName}.\nHere's a summary of my past interactions with ${leadFirstName}:\n${interactionHistorySummary}\n---\n` :
+    `My name is ${yourName}.\nI previously sent a cold email to ${leadFirstName}.\n`;
 
   return `
 ${historyPromptSection}
@@ -276,24 +250,22 @@ If you include a list, use hyphenated bullet points (e.g., "- Item 1"), with eac
 
 Acknowledge their LATEST reply and specific concerns.
 If there's relevant history, subtly weave it in to show you remember them (e.g., "Following up on our previous discussion about X..."). If their latest reply introduces a new topic clearly distinct from the history, a brief acknowledgment of this shift can be good before addressing the new points.
-Base your explanation of how you can help strictly on the prospect's `classifiedData` (their needs and concerns) and the service descriptions in your `serviceProfile`. Do not offer services, suggest solutions, or make claims not directly supported by these inputs.
+Base your explanation of how you can help strictly on the prospect's ${classifiedData} (their needs and concerns) and the service descriptions in your ${serviceProfile}. Do not offer services, suggest solutions, or make claims not directly supported by these inputs.
 Briefly explain how I can help with the identified service(s)/concerns from their latest reply, drawing from my expertise.
 When you suggest a meeting, clearly state that a Calendly link will be provided by the system. Ensure this call to action (mentioning the system will provide the link) is distinct, perhaps as its own paragraph or clearly separated.
 The email should be concise, professional, and encouraging.
 End your response with the closing "Looking forward to helping out," (or a similar suitable professional closing), and on the next line, just the name "${yourName}".
 Do NOT add any unsubscribe footer or any other text after your name; the system will append the necessary footer and meeting link.
-  `;
+`;
 }
 
 /**
  * Generates the prompt for a follow-up email.
  * @param {string} firstName The first name of the lead.
- *   @param {string} lastService The last service provided to the lead.
+ * @param {string} lastService The last service provided to the lead.
  * @return {string} The formatted prompt string.
  */
 function getFollowUpEmailPrompt(firstName, lastService) {
-  // New prompt based on revised instructions for getFollowUpEmailPrompt
-  return `Write a unique, extremely concise (2-4 sentences total) follow-up email to ${firstName} about ${lastService}. Remind them of the free audit.
   return `Write a unique, extremely concise (2-4 sentences total) follow-up email to ${firstName} about ${lastService}. Remind them of the free audit.
 Start with "Hi ${firstName},".
 The reminder should be gentle and value-focused.
