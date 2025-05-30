@@ -340,18 +340,3 @@ function formatPlainTextEmailBody(rawAIBody) {
   // 4. Join the filtered, trimmed paragraphs with double newlines for consistent spacing.
   return paragraphs.join('\n\n');
 }
-
-/**
- * Safely gets a value from the CONFIG object.
- * @param {string} key The key to get from CONFIG.
- * @param {*} [defaultValue=undefined] The default value to return if the key doesn't exist.
- * @return {*} The value from CONFIG or defaultValue.
- */
-function getConfigValue(key, defaultValue = undefined) {
-  return (typeof CONFIG !== 'undefined' && CONFIG !== null && key in CONFIG) ? CONFIG[key] : defaultValue;
-}
-
-// Export CONFIG as a module property for ES6 module compatibility
-if (typeof module !== 'undefined') {
-  module.exports = { CONFIG, getConfigValue };
-}
