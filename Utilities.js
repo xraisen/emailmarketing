@@ -183,63 +183,62 @@ function getLeadInteractionHistory(leadId, email) {
               relevantLogs.reverse().forEach(log => { // Reverse to show oldest first in this selection
                 historySummary += `  - ${log.timestamp}: ${log.action} - ${log.details}...\n`;
               });
-            } else {
-               historySummary += "Recent Logs: No specific logs found for this Lead ID.\n";
-            }
+            } 
+            // If relevantLogs.length is 0, no "Recent Logs" header or "no logs" message is added.
           }
         } else {
-           historySummary += "Recent Logs: Log sheet is empty or contains only headers.\n";
+           // Log sheet is empty or only headers, do not add "Recent Logs" section or related messages.
+           logAction('GetLeadHistory_LogsSheetInfo', leadId, email, 'Log sheet is empty or contains only headers. No logs to add to history.', 'INFO');
         }
       } else {
-        historySummary += "Recent Logs: (Logs sheet not found)\n";
+        // Logs sheet not found, do not add "Recent Logs" section.
         logAction('GetLeadHistory_LogsSheetError', leadId, email, `Logs sheet '${LOGS_SHEET_NAME}' not found.`, 'WARNING');
+        // Optionally, add a warning to the summary if this is considered critical for AI context,
+        // but per requirements, we are keeping sections clean if empty.
+        // historySummary += "(Warning: Logs sheet not found, log history may be incomplete.)\n"; 
       }
     } catch (e) {
       logAction('GetLeadHistory_LogsSheetError', leadId, email, `Error accessing Logs sheet: ${e.message}`, 'WARNING');
-      historySummary += "(Warning: Could not retrieve some log history due to error.)\n";
+      // historySummary += "(Warning: Could not retrieve some log history due to error.)\n"; // Optional warning
     }
 
     // Section 3: Get from Gmail Thread
     try {
       if (email) { // Only attempt Gmail search if email is provided
-        // Check if GmailApp service is available (it might not be in some non-Google execution contexts or if disabled)
         if (typeof GmailApp !== 'undefined' && GmailApp && typeof GmailApp.search === 'function') { 
-            const threads = GmailApp.search(`(to:${email} OR from:${email}) in:inbox`, 0, 1); // Get the most recent thread
+            const threads = GmailApp.search(`(to:${email} OR from:${email}) in:inbox`, 0, 1); 
             if (threads.length > 0) {
               const messages = threads[0].getMessages();
               if (messages.length > 0) {
+                historySummary += `Last Email in Thread (up to 2 most recent):\n`; // Header added only if messages exist
+                
                 // Get the very last message
                 const lastMessage = messages[messages.length - 1];
-                const snippet = lastMessage.getPlainBody().substring(0, 100); // Truncate snippet
+                const snippet = lastMessage.getPlainBody().substring(0, 100); 
                 const messageDate = new Date(lastMessage.getDate()).toLocaleDateString();
                 const from = lastMessage.getFrom();
-                historySummary += `Last Email in Thread (${messageDate}):\n`;
-                historySummary += `  - From: ${from}\n`;
-                historySummary += `  - Snippet: "${snippet}..."\n`;
+                historySummary += `  - Date: ${messageDate}, From: ${from}\n`;
+                historySummary += `    Snippet: "${snippet}..."\n`;
 
                 // Get the second to last message if it exists
                 if (messages.length > 1) {
                   const secondLastMessage = messages[messages.length - 2];
-                  const snippet2 = secondLastMessage.getPlainBody().substring(0, 100); // Truncate snippet
+                  const snippet2 = secondLastMessage.getPlainBody().substring(0, 100); 
                   const messageDate2 = new Date(secondLastMessage.getDate()).toLocaleDateString();
                   const from2 = secondLastMessage.getFrom();
-                  historySummary += `Second Last Email (${messageDate2}):\n`;
-                  historySummary += `  - From: ${from2}\n`;
-                  historySummary += `  - Snippet: "${snippet2}..."\n`;
+                  historySummary += `  - Date: ${messageDate2}, From: ${from2}\n`;
+                  historySummary += `    Snippet: "${snippet2}..."\n`;
                 }
-              } else {
-                 historySummary += "Gmail Thread: Last thread found but contains no messages.\n";
-              }
-            } else {
-              historySummary += "Gmail Thread: No recent threads found with this email.\n";
-            }
+              } 
+              // If messages.length is 0, no "Gmail Thread" header or "no messages" message is added.
+            } 
+            // If threads.length is 0, no "Gmail Thread" header or "no threads" message is added.
         } else {
             logAction('GetLeadHistory_GmailError', leadId, email, 'GmailApp service not available or search function missing.', 'WARNING');
-            historySummary += "(Warning: Could not retrieve Gmail history - GmailApp service unavailable.)\n";
+            // historySummary += "(Warning: Could not retrieve Gmail history - GmailApp service unavailable.)\n"; // Optional
         }
-      } else {
-          historySummary += "Gmail Thread: Email not provided for search.\n";
-      }
+      } 
+      // If email is not provided, no Gmail search is attempted, and no section is added.
     } catch (e) {
       logAction('GetLeadHistory_GmailError', leadId, email, `Error accessing Gmail: ${e.message}`, 'WARNING');
       historySummary += `(Warning: Could not retrieve Gmail history due to error: ${e.message})\n`;
@@ -256,12 +255,15 @@ function getLeadInteractionHistory(leadId, email) {
 
   // Check if only the initial lines and status were added and no real content from logs/gmail
   // This helps determine if the history is substantial enough or just basic info.
-  const linesInSummary = historySummary.split('\n').filter(line => line.trim() !== '' && !line.startsWith("(Warning:") && !line.startsWith("(Error:")).length;
+  const linesInSummary = historySummary.split('\n').filter(line => line.trim() !== '' && !line.startsWith("(Warning:") && !line.startsWith("(Error:") && !line.startsWith("(Critical Error:")).length;
+  // Check if, after the initial status line, any actual log or email content was added.
+  // The initial summary adds 2 lines: "Interaction History..." and "- Current Lead Status...".
+  // If only these 2 lines (or fewer, in case of errors generating even that) are present, it means no significant logs/emails were found.
   if (linesInSummary <= 2 && initialHistoryGenerated) { 
       return `No significant prior interaction found for ${leadFirstName} (${email || leadId}). Current Status: ${leadStatus}.`;
   }
   
-  return historySummary;
+  return historySummary.trimEnd(); // Trim any trailing newlines that might result from conditional sections
 }
 
 /**

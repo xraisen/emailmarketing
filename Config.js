@@ -4,12 +4,6 @@
  * All user-specific settings, API keys, and global constants are defined here.
  * Ensure all "User MUST provide" or "User Provided" values are correctly set before running the script.
  */
-/**
- * @file Config.js
- * @description Centralized configuration for the AI Sales Assistant Google Apps Script project.
- * All user-specific settings, API keys, and global constants are defined here.
- * Ensure all "User MUST provide" or "User Provided" values are correctly set before running the script.
- */
 
 const CONFIG = {
   /** 
@@ -27,53 +21,8 @@ const CONFIG = {
    * @type {string} User MUST provide. Your main public Calendly booking page link. Used as a default if service-specific links aren't found.
    * @example 'https://calendly.com/your_username/30min' 
    */
-  CALENDLY_LINK: 'https://calendly.com/raisencross/30min', // Your main public Calendly booking page link
-  
-  /**
-   * @type {Object} User MUST provide. Service categories for lead classification.
-   * Each category has keywords for email matching, a description, and a Calendly link.
-   */
-  SERVICE_CATEGORIES: {
-    "Google Ads Management": {
-      keywords: ["google ads", "ppc", "adwords", "campaigns", "performance max", "ad spend", "search ads", "display ads"],
-      description: "Expert Google Ads management including Search, Display, and Performance Max campaigns, focusing on strategy, optimization, and results-driven advertising to maximize ROI.",
-      calendlyLink: "https://calendly.com/jose-ads-gmc/30min" // Specific link for Google Ads consultations
-    },
-    "GMC/Feed Management": {
-      keywords: ["gmc", "merchant center", "feed disapproval", "product feed", "shopping ads", "data feed"],
-      description: "Specialized in fixing Google Merchant Center feed disapprovals, optimizing product feeds for better ad placements and performance in Shopping Ads, and setting up GMC for new stores.",
-      calendlyLink: "https://calendly.com/jose-ads-gmc/30min" // Specific link for GMC/Feed consultations
-    },
-    "Web Design & Development": {
-      keywords: ["website", "web design", "web development", "landing page", "cms", "wordpress", "shopify", "e-commerce site", "responsive design"],
-      description: "Full-stack web design and development services, creating responsive and user-friendly websites, high-converting landing pages, and complete CMS builds (WordPress, Shopify, custom solutions).",
-      calendlyLink: "https://calendly.com/jose-web-design/30min" // Specific link for Web Design/Dev consultations
-    },
-    "Funnels": {
-      keywords: ["funnels", "sales funnel", "lead generation funnel", "clickfunnels", "marketing funnel", "conversion funnel"],
-      description: "Design and implementation of high-converting sales and lead generation funnels, including strategy, copywriting, and technical setup to nurture leads and drive sales.",
-      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
-    },
-    "AI Automation": {
-      keywords: ["ai automation", "chatbots", "ai agents", "workflow automation", "zapier", "make.com", "integromat", "process automation"],
-      description: "Implementing AI-driven automation solutions and custom workflow automations (e.g., using Zapier, Make.com, or custom scripts) to streamline business processes and improve efficiency.",
-      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
-    },
-    "Tech Strategy": {
-      keywords: ["tech strategy", "digital transformation", "it consulting", "saas integration", "crm strategy", "technology roadmap"],
-      description: "Providing strategic advice on technology adoption, digital transformation initiatives, SaaS integration, and developing comprehensive technology roadmaps for business growth.",
-      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
-    },
-    /** 
-     * Fallback service profile. Used when the AI cannot clearly identify a specific service 
-     * from the prospect's reply or if the inquiry is general.
-     */
-    "Generic Inquiry": { 
-      keywords: [], // Typically empty as it's a fallback
-      description: "General discussion about digital marketing needs, technical challenges, or other inquiries where a specific service isn't immediately identifiable. Happy to explore how I can help your business grow.",
-      calendlyLink: CONFIG.CALENDLY_LINK // Uses the default/general Calendly link
-    }
-  },
+  CALENDLY_LINK: 'https://calendly.com/raisencross/30min', 
+
   /** 
    * @type {string} User MUST provide. The email address for receiving important notifications from the system (e.g., leads needing manual review, errors).
    */
@@ -113,6 +62,12 @@ const CONFIG = {
    */
   EMAIL_FOOTER: "Reply STOP to unsubscribe", 
 
+  /**
+   * @type {string} Optional prefix to be added to the subject line of outgoing emails.
+   * @example "Sales Bot: " or "" (empty for no prefix)
+   */
+  SUBJECT_PREFIX: "", 
+
   /** 
    * @type {number} System-defined. Maximum number of initial cold emails to send per day via the `dailyEmailBatch` function.
    */
@@ -141,14 +96,8 @@ const CONFIG = {
       keywords: ["google ads", "ppc", "adwords", "campaigns", "performance max", "ad spend", "search ads", "display ads"],
       description: "Expert Google Ads management including Search, Display, and Performance Max campaigns, focusing on strategy, optimization, and results-driven advertising to maximize ROI.",
       calendlyLink: "https://calendly.com/jose-ads-gmc/30min" // Specific link for Google Ads consultations
-      keywords: ["google ads", "ppc", "adwords", "campaigns", "performance max", "ad spend", "search ads", "display ads"],
-      description: "Expert Google Ads management including Search, Display, and Performance Max campaigns, focusing on strategy, optimization, and results-driven advertising to maximize ROI.",
-      calendlyLink: "https://calendly.com/jose-ads-gmc/30min" // Specific link for Google Ads consultations
     },
     "GMC/Feed Management": {
-      keywords: ["gmc", "merchant center", "feed disapproval", "product feed", "shopping ads", "data feed"],
-      description: "Specialized in fixing Google Merchant Center feed disapprovals, optimizing product feeds for better ad placements and performance in Shopping Ads, and setting up GMC for new stores.",
-      calendlyLink: "https://calendly.com/jose-ads-gmc/30min" // Specific link for GMC/Feed consultations
       keywords: ["gmc", "merchant center", "feed disapproval", "product feed", "shopping ads", "data feed"],
       description: "Specialized in fixing Google Merchant Center feed disapprovals, optimizing product feeds for better ad placements and performance in Shopping Ads, and setting up GMC for new stores.",
       calendlyLink: "https://calendly.com/jose-ads-gmc/30min" // Specific link for GMC/Feed consultations
@@ -158,14 +107,7 @@ const CONFIG = {
       description: "Full-stack web design and development services, creating responsive and user-friendly websites, high-converting landing pages, and complete CMS builds (WordPress, Shopify, custom solutions).",
       calendlyLink: "https://calendly.com/jose-web-design/30min" // Specific link for Web Design/Dev consultations
     },
-      keywords: ["website", "web design", "web development", "landing page", "cms", "wordpress", "shopify", "e-commerce site", "responsive design"],
-      description: "Full-stack web design and development services, creating responsive and user-friendly websites, high-converting landing pages, and complete CMS builds (WordPress, Shopify, custom solutions).",
-      calendlyLink: "https://calendly.com/jose-web-design/30min" // Specific link for Web Design/Dev consultations
-    },
     "Funnels": {
-      keywords: ["funnels", "sales funnel", "lead generation funnel", "clickfunnels", "marketing funnel", "conversion funnel"],
-      description: "Design and implementation of high-converting sales and lead generation funnels, including strategy, copywriting, and technical setup to nurture leads and drive sales.",
-      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
       keywords: ["funnels", "sales funnel", "lead generation funnel", "clickfunnels", "marketing funnel", "conversion funnel"],
       description: "Design and implementation of high-converting sales and lead generation funnels, including strategy, copywriting, and technical setup to nurture leads and drive sales.",
       calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
@@ -174,14 +116,8 @@ const CONFIG = {
       keywords: ["ai automation", "chatbots", "ai agents", "workflow automation", "zapier", "make.com", "integromat", "process automation"],
       description: "Implementing AI-driven automation solutions and custom workflow automations (e.g., using Zapier, Make.com, or custom scripts) to streamline business processes and improve efficiency.",
       calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
-      keywords: ["ai automation", "chatbots", "ai agents", "workflow automation", "zapier", "make.com", "integromat", "process automation"],
-      description: "Implementing AI-driven automation solutions and custom workflow automations (e.g., using Zapier, Make.com, or custom scripts) to streamline business processes and improve efficiency.",
-      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
     },
     "Tech Strategy": {
-      keywords: ["tech strategy", "digital transformation", "it consulting", "saas integration", "crm strategy", "technology roadmap"],
-      description: "Providing strategic advice on technology adoption, digital transformation initiatives, SaaS integration, and developing comprehensive technology roadmaps for business growth.",
-      calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
       keywords: ["tech strategy", "digital transformation", "it consulting", "saas integration", "crm strategy", "technology roadmap"],
       description: "Providing strategic advice on technology adoption, digital transformation initiatives, SaaS integration, and developing comprehensive technology roadmaps for business growth.",
       calendlyLink: "https://calendly.com/jose-general/30min" // Placeholder, update with specific link or use general
@@ -193,16 +129,13 @@ const CONFIG = {
     "Generic Inquiry": { 
       keywords: [], // Typically empty as it's a fallback
       description: "General discussion about digital marketing needs, technical challenges, or other inquiries where a specific service isn't immediately identifiable. Happy to explore how I can help your business grow.",
-      calendlyLink: CONFIG.CALENDLY_LINK // Uses the default/general Calendly link
+      calendlyLink: 'https://calendly.com/raisencross/30min' // Default link, ensures consistency with CONFIG.CALENDLY_LINK value
     }
   }
 };
 
 /** @type {string} System-defined. The name of the Google Sheet tab containing lead data. */
-/** @type {string} System-defined. The name of the Google Sheet tab containing lead data. */
 const LEADS_SHEET_NAME = 'Leads';
-
-/** @type {string} System-defined. The name of the Google Sheet tab used for logging script actions and errors. */
 
 /** @type {string} System-defined. The name of the Google Sheet tab used for logging script actions and errors. */
 const LOGS_SHEET_NAME = 'Logs';
@@ -211,36 +144,21 @@ const LOGS_SHEET_NAME = 'Logs';
  * @type {Object<string, string>} Defines the lead statuses used throughout the CRM automation system.
  * These statuses track a lead's progression through the sales and communication funnel.
  */
-/** 
- * @type {Object<string, string>} Defines the lead statuses used throughout the CRM automation system.
- * These statuses track a lead's progression through the sales and communication funnel.
- */
 const STATUS = {
-  /** @type {string} Lead is new in the system, awaiting initial contact. */
   /** @type {string} Lead is new in the system, awaiting initial contact. */
   PENDING: 'PENDING',
   /** @type {string} Initial cold email has been sent to the lead. */
-  /** @type {string} Initial cold email has been sent to the lead. */
   SENT: 'SENT',
-  /** @type {string} First follow-up email has been sent after no reply to initial. */
   /** @type {string} First follow-up email has been sent after no reply to initial. */
   FOLLOW_UP_1: 'FOLLOW_UP_1',
   /** @type {string} Lead has shown positive interest and is considered a high-priority prospect. AI-generated contextual follow-up sent. */
-  /** @type {string} Lead has shown positive interest and is considered a high-priority prospect. AI-generated contextual follow-up sent. */
   HOT: 'HOT',
-  /** @type {string} Lead has indicated they are not interested or has been opted out. */
   /** @type {string} Lead has indicated they are not interested or has been opted out. */
   UNQUALIFIED: 'UNQUALIFIED',
   /** @type {string} Lead has booked a meeting (typically via Calendly). */
-  /** @type {string} Lead has booked a meeting (typically via Calendly). */
   BOOKED: 'BOOKED',
   /** @type {string} Lead was previously followed up with but did not progress further after a set period. */
-  /** @type {string} Lead was previously followed up with but did not progress further after a set period. */
   ABANDONED: 'ABANDONED',
-  /** @type {string} The lead's email address was found to be invalid. */
-  INVALID_EMAIL: 'INVALID_EMAIL', 
-  /** @type {string} Lead's reply requires manual attention due to AI uncertainty (e.g., low confidence, ambiguous query) or specific conditions. */
-  NEEDS_MANUAL_REVIEW: 'NEEDS_MANUAL_REVIEW' 
   /** @type {string} The lead's email address was found to be invalid. */
   INVALID_EMAIL: 'INVALID_EMAIL', 
   /** @type {string} Lead's reply requires manual attention due to AI uncertainty (e.g., low confidence, ambiguous query) or specific conditions. */

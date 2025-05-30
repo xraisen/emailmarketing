@@ -38,12 +38,19 @@ function initializeSheets() {
         setHeaders(sheet, config.headers, config.name);
       } else {
         // Check and set headers if necessary
-        const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        if (!areHeadersCorrect(currentHeaders, config.headers)) {
-          logAction('InitializeSheets', null, null, `Headers missing or incorrect for sheet: ${config.name}. Setting headers.`, 'INFO');
-          setHeaders(sheet, config.headers, config.name);
-        } else {
-          logAction('InitializeSheets', null, null, `Headers already correct for sheet: ${config.name}`, 'DEBUG');
+        // Make sure sheet is valid before calling methods on it
+        if (sheet && typeof sheet.getRange === 'function' && typeof sheet.getLastColumn === 'function') {
+          const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+          if (!areHeadersCorrect(currentHeaders, config.headers)) {
+            logAction('InitializeSheets', null, null, `Headers missing or incorrect for sheet: ${config.name}. Setting headers.`, 'INFO');
+            setHeaders(sheet, config.headers, config.name);
+          } else {
+            logAction('InitializeSheets', null, null, `Headers already correct for sheet: ${config.name}`, 'DEBUG');
+          }
+        } else if (config.name) { // Only log error if config.name was defined, otherwise sheet itself was problematic earlier
+            const errorMsg = `Sheet object for '${config.name}' is invalid or undefined before checking/setting headers.`;
+            logAction('InitializeSheets', null, null, errorMsg, 'ERROR');
+            console.error(errorMsg);
         }
       }
     });
@@ -62,16 +69,26 @@ function initializeSheets() {
  * @param {string} sheetName The name of the sheet (for logging).
  */
 function setHeaders(sheet, headers, sheetName) {
+  // --- Start: Add Guard Clause ---
+  if (!sheet || typeof sheet.getRange !== 'function' || typeof sheet.getLastRow !== 'function' || typeof sheet.getMaxColumns !== 'function') {
+    const errorMsg = `setHeaders called with an invalid or undefined sheet object for sheetName: ${sheetName || 'Unknown'}. Sheet object was: ${String(sheet)}.`;
+    // Assuming logAction is globally available or defined in Setup.js or Utilities.js
+    // If logAction might not be available here, fallback to console.error or Logger.log
+    if (typeof logAction === 'function') {
+      logAction('SetHeadersError', null, null, errorMsg, 'ERROR');
+    } else {
+      console.error(errorMsg); // Use console.error as a robust fallback
+      if (typeof Logger !== 'undefined') Logger.log(errorMsg); // Also log to Apps Script logger if available
+    }
+    return; 
+  }
+  // --- End: Add Guard Clause ---
   try {
     // Clear the first row only if it has content to avoid unnecessary clearing
-    if (sheet.getLastRow() >= 1 && sheet.getLastColumn() >= 1) {
+    // Check if getLastRow returns a number and it's >= 1
+    const lastRow = sheet.getLastRow(); // Get it once
+    if (typeof lastRow === 'number' && lastRow >= 1 && sheet.getLastColumn() >= 1) { 
         const firstRowRange = sheet.getRange(1, 1, 1, sheet.getMaxColumns());
-        // Check if the first row is blank before clearing. This is a bit tricky,
-        // as getValues() on a completely blank row might return [[]] or similar.
-        // A more robust check might involve checking if any cell in the first row has data.
-        // However, for simplicity, we clear if there's *any* data or formatting.
-        // For a truly new sheet, this might be redundant but harmless.
-        // For an existing sheet with incorrect headers, this is necessary.
         firstRowRange.clearContent(); 
     }
     
@@ -80,8 +97,8 @@ function setHeaders(sheet, headers, sheetName) {
     logAction('SetHeaders', null, null, `Headers set for sheet: ${sheetName}`, 'INFO');
     console.log(`Headers set for sheet: ${sheetName}`);
   } catch (e) {
-    logAction('SetHeaders', null, null, `Error setting headers for sheet ${sheetName}: ${e.message}`, 'ERROR');
-    console.error(`Error setting headers for sheet ${sheetName}: ${e.toString()}`);
+    logAction('SetHeaders', null, null, `Error setting headers for sheet ${sheetName}: ${e.message} ${e.stack ? e.stack : ''}`, 'ERROR');
+    console.error(`Error setting headers for sheet ${sheetName}: ${e.toString()} ${e.stack ? e.stack : ''}`);
   }
 }
 
@@ -135,7 +152,7 @@ function setupTriggers() {
 
     // 1. dailyEmailBatch - Every day around 9 AM
     try {
-      if (!CONFIG.USER_TIMEZONE || CONFIG.USER_TIMEZONE === 'YOUR_USER_TIMEZONE') {
+      if (!CONFIG.USER_TIMEZONE || CONFIG.USER_TIMEZONE === 'YOUR_USER_TIMEZONE' || CONFIG.USER_TIMEZONE.trim() === '') {
         logAction('SetupTriggersConfigError', null, null, 'USER_TIMEZONE not set in CONFIG. Cannot create timezone-specific triggers. dailyEmailBatch trigger skipped.', 'ERROR');
         console.error('USER_TIMEZONE not set in CONFIG. Cannot create timezone-specific triggers. dailyEmailBatch trigger skipped.');
       } else {
@@ -155,7 +172,7 @@ function setupTriggers() {
 
     // 2. followUpEmails - Every day around 3 PM
     try {
-      if (!CONFIG.USER_TIMEZONE || CONFIG.USER_TIMEZONE === 'YOUR_USER_TIMEZONE') {
+      if (!CONFIG.USER_TIMEZONE || CONFIG.USER_TIMEZONE === 'YOUR_USER_TIMEZONE' || CONFIG.USER_TIMEZONE.trim() === '') {
          logAction('SetupTriggersConfigError', null, null, 'USER_TIMEZONE not set in CONFIG. followUpEmails trigger skipped.', 'ERROR');
          console.error('USER_TIMEZONE not set in CONFIG. followUpEmails trigger skipped.');
       } else {
@@ -175,7 +192,7 @@ function setupTriggers() {
 
     // 3. cleanupLeads - Every day around 11 PM
     try {
-      if (!CONFIG.USER_TIMEZONE || CONFIG.USER_TIMEZONE === 'YOUR_USER_TIMEZONE') {
+      if (!CONFIG.USER_TIMEZONE || CONFIG.USER_TIMEZONE === 'YOUR_USER_TIMEZONE' || CONFIG.USER_TIMEZONE.trim() === '') {
         logAction('SetupTriggersConfigError', null, null, 'USER_TIMEZONE not set in CONFIG. cleanupLeads trigger skipped.', 'ERROR');
         console.error('USER_TIMEZONE not set in CONFIG. cleanupLeads trigger skipped.');
       } else {
@@ -223,39 +240,60 @@ function setupTriggers() {
  * @return {string|null} The Organization URI or null if an error occurs.
  */
 function getCalendlyOrganizationUri() {
-  const token = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN; // Ensure this is defined
+  const token = CONFIG.CALENDLY_PERSONAL_ACCESS_TOKEN; 
+  if (!token || token === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME' || token.trim() === '') {
+    const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.js. Please update it with your actual token first.';
+    console.error(msg);
+    logAction('GetCalendlyOrgUri', null, null, msg, 'ERROR');
+    return null;
+  }
   const url = 'https://api.calendly.com/users/me';
   const options = {
     headers: {
       'Authorization': `Bearer ${token}`
-    }
+    },
+    muteHttpExceptions: true // Important for parsing error responses
   };
   
-  // Fetch and parse the API response
-  const response = UrlFetchApp.fetch(url, options);
-  const data = JSON.parse(response.getContentText());
-  
-  // Access the URI correctly
-  const orgUri = data.resource.current_organization;
-  
-  if (orgUri) {
-    // Log the result
-    Logger.log(`Your Organization URI is: ${orgUri}`);
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
     
-    // Optionally write to a spreadsheet
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); // Ensure SPREADSHEET_ID is defined
-    const sheet = ss.getSheetByName('Config'); // Adjust sheet name as needed
-    if (sheet) {
-      sheet.getRange('A1').setValue(orgUri); // Adjust cell as needed
+    if (responseCode !== 200) {
+      const errHttpMsg = `Error fetching user data from Calendly. HTTP Status: ${responseCode}. Response: ${responseText}`;
+      console.error(errHttpMsg);
+      logAction('GetCalendlyOrgUri', null, null, errHttpMsg, 'ERROR');
+      return null;
     }
-  } else {
-    // Log the error instead of using getUi()
-    Logger.log('Error: Organization URI not found in API response');
-    Logger.log(response.getContentText());
-    throw new Error('Organization URI not found');
+    
+    const data = JSON.parse(responseText);
+    if (!data || !data.resource || !data.resource.current_organization) {
+      const errDataMsg = 'Error: Organization URI not found in Calendly API response. Response: ' + responseText;
+      console.error(errDataMsg);
+      logAction('GetCalendlyOrgUri', null, null, errDataMsg, 'ERROR');
+      return null;
+    }
+    
+    const orgUri = data.resource.current_organization;
+    const successMsg = `Your Organization URI is: ${orgUri}`;
+    console.log(successMsg);
+    logAction('GetCalendlyOrgUri', null, null, successMsg, 'SUCCESS');
+    
+    // Optionally write to a spreadsheet (ensure SPREADSHEET_ID and sheet name are correct)
+    // const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); 
+    // const sheet = ss.getSheetByName('Config'); 
+    // if (sheet) {
+    //   sheet.getRange('A1').setValue(orgUri); 
+    // }
+    return orgUri;
+
+  } catch (e) {
+    const exceptionMsg = `Exception in getCalendlyOrganizationUri: ${e.message} ${e.stack ? 'Stack: ' + e.stack : ''}`;
+    console.error(exceptionMsg);
+    logAction('GetCalendlyOrgUri', null, null, exceptionMsg, 'ERROR');
+    return null;
   }
-  
-  return orgUri;
 }
 
 /**
@@ -273,29 +311,40 @@ function createCalendlyWebhookSubscription() {
     const msg = 'Error: Could not get valid Web App URL. The script must be deployed as a web app first.';
     console.error(msg);
     logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
+    // It might be useful to inform the user via UI if running from editor, but for now, log.
+    // if (typeof SpreadsheetApp !== 'undefined') SpreadsheetApp.getUi().alert(msg);
     return false;
   }
 
-  if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME') {
+  if (!apiToken || apiToken === 'YOUR_ACTUAL_PERSONAL_ACCESS_TOKEN_REPLACE_ME' || apiToken.trim() === '') {
     const msg = 'Error: CALENDLY_PERSONAL_ACCESS_TOKEN is not set in Config.js. Please update it with your actual token first.';
     console.error(msg);
     logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
     return false;
   }
 
-  if (!orgUri || orgUri === 'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME') {
+  if (!orgUri || orgUri === 'YOUR_ORGANIZATION_URI_FROM_API_REPLACE_ME' || orgUri.trim() === '') {
     const msg = 'Error: ORGANIZATION_URI is not set in Config.js. Please run getCalendlyOrganizationUri() and update Config.js first.';
     console.error(msg);
     logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
     return false;
   }
+  
+  if (!CONFIG.CALENDLY_SIGNING_KEY || CONFIG.CALENDLY_SIGNING_KEY === 'YOUR_CALENDLY_WEBHOOK_SIGNING_KEY_REPLACE_ME' || CONFIG.CALENDLY_SIGNING_KEY.trim() === '') {
+    const msg = 'Error: CALENDLY_SIGNING_KEY is not set in Config.js. Please obtain it from your Calendly webhook settings and update Config.js.';
+    console.error(msg);
+    logAction('CreateCalendlyWebhook', null, null, msg, 'ERROR');
+    return false;
+  }
+
 
   try {
     const payload = {
       url: webAppUrl,
       events: ['invitee.created', 'invitee.canceled'],
       organization: orgUri,
-      scope: 'organization'
+      scope: 'organization',
+      signing_key: CONFIG.CALENDLY_SIGNING_KEY 
     };
     const options = {
       method: 'post',
@@ -316,13 +365,14 @@ function createCalendlyWebhookSubscription() {
       console.log(successMsg);
       logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS');
       return true;
-    } else if (responseCode === 409) {
-      const successMsg = 'Calendly webhook subscription already exists for this URL (HTTP 409 Conflict). Response: ' + responseBody;
-      console.log(successMsg);
-      logAction('CreateCalendlyWebhook', null, null, successMsg, 'SUCCESS'); // Still a success for our purposes
-      return true;
+    } else if (responseCode === 409) { // HTTP 409 Conflict
+      const conflictMsg = 'Calendly webhook subscription may already exist for this URL and organization (HTTP 409 Conflict). ' +
+                          'If you need to update it, please delete the existing one in Calendly admin first. Response: ' + responseBody;
+      console.warn(conflictMsg); // Log as warning, but consider it a success for automation.
+      logAction('CreateCalendlyWebhook', null, null, conflictMsg, 'WARNING'); 
+      return true; // Assuming existing is acceptable.
     } else {
-      const errorMsg = 'Error creating Calendly webhook subscription. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your token and Org URI in Config.js are correct and the Web App URL is valid.';
+      const errorMsg = 'Error creating Calendly webhook subscription. Code: ' + responseCode + '\nBody: ' + responseBody + '\nEnsure your token, Org URI, and Signing Key in Config.js are correct and the Web App URL is valid.';
       console.error(errorMsg);
       logAction('CreateCalendlyWebhook', null, null, errorMsg, 'ERROR');
       return false;
