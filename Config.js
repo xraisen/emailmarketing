@@ -62,6 +62,12 @@ const CONFIG = {
    */
   EMAIL_FOOTER: "Reply STOP to unsubscribe", 
 
+  /**
+   * @type {string} Optional prefix to be added to the subject line of outgoing emails.
+   * @example "Sales Bot: " or "" (empty for no prefix)
+   */
+  SUBJECT_PREFIX: "", 
+
   /** 
    * @type {number} System-defined. Maximum number of initial cold emails to send per day via the `dailyEmailBatch` function.
    */

@@ -3,6 +3,7 @@
 // --- Assertion Helpers ---
 function assertEqual(actual, expected, message) {
   const pass = actual === expected;
+  const pass = actual === expected;
   if (typeof actual === 'object' && typeof expected === 'object' && actual !== null && expected !== null) {
     // Basic JSON stringify comparison for objects/arrays
     if (JSON.stringify(actual) === JSON.stringify(expected)) {
@@ -49,6 +50,16 @@ const __originalSTATUS = typeof STATUS !== 'undefined' ? STATUS : undefined;
 const __originalLEADS_SHEET_NAME = typeof LEADS_SHEET_NAME !== 'undefined' ? LEADS_SHEET_NAME : undefined;
 const __originalLOGS_SHEET_NAME = typeof LOGS_SHEET_NAME !== 'undefined' ? LOGS_SHEET_NAME : undefined;
 const __originalLockService = typeof LockService !== 'undefined' ? LockService : undefined;
+const __originalSpreadsheetApp = typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp : undefined;
+const __originalGmailApp = typeof GmailApp !== 'undefined' ? GmailApp : undefined;
+const __originalUrlFetchApp = typeof UrlFetchApp !== 'undefined' ? UrlFetchApp : undefined;
+const __originalUtilities = typeof Utilities !== 'undefined' ? Utilities : undefined;
+const __originalLogger = typeof Logger !== 'undefined' ? Logger : undefined;
+const __originalCONFIG = typeof CONFIG !== 'undefined' ? CONFIG : undefined;
+const __originalSTATUS = typeof STATUS !== 'undefined' ? STATUS : undefined;
+const __originalLEADS_SHEET_NAME = typeof LEADS_SHEET_NAME !== 'undefined' ? LEADS_SHEET_NAME : undefined;
+const __originalLOGS_SHEET_NAME = typeof LOGS_SHEET_NAME !== 'undefined' ? LOGS_SHEET_NAME : undefined;
+const __originalLockService = typeof LockService !== 'undefined' ? LockService : undefined;
 
 
 // Global map to store original functions that might be mocked by tests using mockFunction(this, 'functionName', ...)
@@ -56,6 +67,7 @@ var __globalOriginals = {}; // Use var for Apps Script global behavior if not in
 
 // Mock for SpreadsheetApp
 var MockSpreadsheetApp = {
+  _sheetsData: {}, // {"spreadsheetId": {"sheetName": {data: [[]], lastRow: X, lastCol: Y, _lastSetValue: null, _appendedRows: []}}}
   _sheetsData: {}, // {"spreadsheetId": {"sheetName": {data: [[]], lastRow: X, lastCol: Y, _lastSetValue: null, _appendedRows: []}}}
   _currentSpreadsheetId: null,
   _currentSheetName: null,
@@ -75,6 +87,7 @@ var MockSpreadsheetApp = {
       this._sheetsData[this._currentSpreadsheetId][name] = { data: [[]], lastRow: 0, lastCol: 0, _lastSetValue: null, _appendedRows: [] };
     }
     const sheetMockData = this._sheetsData[this._currentSpreadsheetId][name];
+    const sheetMockData = this._sheetsData[this._currentSpreadsheetId][name];
     return {
       getDataRange: function() {
         return {
@@ -82,18 +95,51 @@ var MockSpreadsheetApp = {
         };
       },
       getRange: function(row, col, numRows, numCols) {
-        return {
+        // Ensure numRows and numCols have default values if not provided, similar to real getRange
+        const effNumRows = (numRows === undefined || numRows === null) ? 1 : numRows;
+        const effNumCols = (numCols === undefined || numCols === null) ? 1 : numCols;
+
+        return { // This is the mock Range object
           getValue: function() { return (sheetMockData.data[row-1] && sheetMockData.data[row-1][col-1]) || ""; },
           setValue: function(value) {
             Logger.log(`[MOCK SPREADSHEET] setValue on ${name} at R${row}C${col} = ${value}`);
             if (!sheetMockData.data[row-1]) {
                 for(let r_idx = sheetMockData.data.length; r_idx < row; r_idx++) sheetMockData.data.push([]);
+                for(let r_idx = sheetMockData.data.length; r_idx < row; r_idx++) sheetMockData.data.push([]);
             }
+            for(let c_idx = (sheetMockData.data[row-1] ? sheetMockData.data[row-1].length : 0); c_idx < col; c_idx++) sheetMockData.data[row-1].push("");
             for(let c_idx = (sheetMockData.data[row-1] ? sheetMockData.data[row-1].length : 0); c_idx < col; c_idx++) sheetMockData.data[row-1].push("");
             sheetMockData.data[row-1][col-1] = value;
             sheetMockData._lastSetValue = {row: row, col: col, value: value, sheetName: name};
             if (row > sheetMockData.lastRow) sheetMockData.lastRow = row;
             if (col > sheetMockData.lastCol) sheetMockData.lastCol = col;
+          },
+          getValues: function() { // NEW METHOD
+            let rangeValues = [];
+            // Use 'row', 'col' from the parent getRange call, 
+            // and 'effNumRows', 'effNumCols' calculated in parent getRange
+            for (let r_offset = 0; r_offset < effNumRows; r_offset++) {
+              let actualSheetRowIdx = row - 1 + r_offset;
+              let currentRowValues = [];
+              if (sheetMockData.data && actualSheetRowIdx < sheetMockData.data.length && sheetMockData.data[actualSheetRowIdx]) {
+                let sourceRow = sheetMockData.data[actualSheetRowIdx];
+                for (let c_offset = 0; c_offset < effNumCols; c_offset++) {
+                  let actualSheetColIdx = col - 1 + c_offset;
+                  if (actualSheetColIdx < sourceRow.length) {
+                    currentRowValues.push(sourceRow[actualSheetColIdx]);
+                  } else {
+                    currentRowValues.push(""); // Or undefined, "" is safer
+                  }
+                }
+              } else {
+                // Row doesn't exist in mock data, fill with empty strings
+                for (let c_offset = 0; c_offset < effNumCols; c_offset++) {
+                  currentRowValues.push("");
+                }
+              }
+              rangeValues.push(currentRowValues);
+            }
+            return rangeValues;
           }
         };
       },
@@ -135,6 +181,7 @@ var MockGmailApp = {
   },
   _addMockThread: function(threadData) { // threadData = {messages: [{body, from, date}], queryMatcher: func}
       const mockMessages = (threadData.messages || []).map(m => ({
+      const mockMessages = (threadData.messages || []).map(m => ({
           getPlainBody: () => m.body || "",
           getFrom: () => m.from || "",
           getDate: () => m.date || new Date(),
@@ -159,7 +206,9 @@ var MockUrlFetchApp = {
         this._lastFetchUrl = url;
         this._lastFetchParams = params;
         for (const pattern in this._mockResponses) {
+        for (const pattern in this._mockResponses) {
             if (url.includes(pattern)) {
+                const mockResp = this._mockResponses[pattern];
                 const mockResp = this._mockResponses[pattern];
                 return {
                     getResponseCode: () => mockResp.responseCode || 200,
@@ -177,6 +226,9 @@ var MockUrlFetchApp = {
 
 // Mock for Utilities
 var MockUtilities = {
+    formatDate: (date, tz, format) => new Date(date).toISOString().substring(0,19).replace('T',' ') + " GMT", // Simple mock
+    sleep: (ms) => Logger.log(`[MOCK UTILITIES] sleep for ${ms}ms`),
+    getUuid: () => 'mock-uuid-' + Math.random().toString(36).substring(2,9)
     formatDate: (date, tz, format) => new Date(date).toISOString().substring(0,19).replace('T',' ') + " GMT", // Simple mock
     sleep: (ms) => Logger.log(`[MOCK UTILITIES] sleep for ${ms}ms`),
     getUuid: () => 'mock-uuid-' + Math.random().toString(36).substring(2,9)
@@ -230,6 +282,7 @@ function teardownTestMocks() {
 
   // Restore functions mocked using mockFunction(this, ...)
   for (const funcName in __globalOriginals) {
+  for (const funcName in __globalOriginals) {
     if (this.hasOwnProperty(funcName) && __globalOriginals.hasOwnProperty(funcName)) {
       this[funcName] = __globalOriginals[funcName].original;
       Logger.log(`[TEST TEARDOWN] Restored global function: ${funcName}`);
@@ -240,6 +293,8 @@ function teardownTestMocks() {
 
 // General purpose mockFunction that stores original in __globalOriginals
 function mockFunction(obj, functionName, mockImplementation) {
+    const globalFuncName = (obj === this || obj === globalThis) ? functionName : null; // 'this' in Apps Script global scope
+    const original = globalFuncName ? (obj[functionName] || undefined) : (obj ? obj[functionName] : undefined);
     const globalFuncName = (obj === this || obj === globalThis) ? functionName : null; // 'this' in Apps Script global scope
     const original = globalFuncName ? (obj[functionName] || undefined) : (obj ? obj[functionName] : undefined);
 
@@ -322,6 +377,8 @@ function test_getLeadInteractionHistory_NoHistory() {
   setupTestMocks();
   const leadId = "LID_NoHistory"; const email = "nohistory@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID; // Use mocked CONFIG
+  const leadId = "LID_NoHistory"; const email = "nohistory@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID; // Use mocked CONFIG
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
     ["Lead ID", "Email", "First Name", "Status"], [leadId, email, "NoHistoryLead", STATUS.PENDING]
@@ -332,15 +389,13 @@ function test_getLeadInteractionHistory_NoHistory() {
   MockGmailApp._clearMockData(); // Ensure no threads
 
   const history = getLeadInteractionHistory(leadId, email); // Test the real function
+  const history = getLeadInteractionHistory(leadId, email); // Test the real function
   
   assertNotNull(history, "History should not be null");
-  assertTrue(history.includes("No significant prior interaction found") || history.includes("Current Lead Status: " + STATUS.PENDING), "Summary should indicate no history or only status.");
-  const logsSectionPresent = history.includes("Recent Logs:");
-  const noLogsMessagePresent = history.includes("No specific logs found for this Lead ID.");
-  assertTrue(!logsSectionPresent || noLogsMessagePresent, "Should not list 'Recent Logs:' section if no logs, or indicate none found.");
-  const gmailSectionPresent = history.includes("Last Email in Thread");
-  const noGmailMessagePresent = history.includes("No recent threads found with this email.");
-  assertTrue(!gmailSectionPresent || noGmailMessagePresent, "Should not list 'Last Email in Thread' if none, or indicate none found.");
+  // With refined logic, "No significant prior interaction found" is the primary expected message for no logs/emails.
+  assertTrue(history.includes("No significant prior interaction found for NoHistoryLead"), "Summary should indicate no significant history.");
+  assertFalse(history.includes("Recent Logs:"), "History for no logs should NOT contain 'Recent Logs:' header.");
+  assertFalse(history.includes("Last Email in Thread"), "History for no emails should NOT contain 'Last Email in Thread' header."); // Generic check for any email header
 
   teardownTestMocks();
 }
@@ -350,25 +405,29 @@ function test_getLeadInteractionHistory_LogsOnly() {
   setupTestMocks();
   const leadId = "LID_LogsOnly"; const email = "logsonly@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+  const leadId = "LID_LogsOnly"; const email = "logsonly@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
     ["Lead ID", "Email", "First Name", "Status"], [leadId, email, "LogsOnlyLead", STATUS.SENT]
   ]);
+  const logDate1 = new Date(2023, 1, 1);
+  const logDate2 = new Date(2023, 1, 2);
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LOGS_SHEET_NAME, [
     ["Timestamp", "Lead ID", "Action", "Details"],
-    [new Date(2023, 1, 1).toISOString(), leadId, "Test Action 1", "Details for log 1"],
-    [new Date(2023, 1, 2).toISOString(), leadId, "Test Action 2", "Details for log 2"]
+    [logDate1.toISOString(), leadId, "Test Action 1", "Details for log 1"],
+    [logDate2.toISOString(), leadId, "Test Action 2", "Details for log 2"]
   ]);
   MockGmailApp._clearMockData();
 
   const history = getLeadInteractionHistory(leadId, email);
+  const history = getLeadInteractionHistory(leadId, email);
   
   assertNotNull(history, "History should not be null");
-  assertTrue(history.includes("Test Action 1"), "Should include log action 1");
-  assertTrue(history.includes("Details for log 2"), "Should include details for log 2");
-  const gmailSectionPresent = history.includes("Last Email in Thread");
-  const noGmailMessagePresent = history.includes("No recent threads found with this email.");
-  assertTrue(!gmailSectionPresent || noGmailMessagePresent, "Should not include Gmail history or indicate none found.");
+  assertTrue(history.includes("Recent Logs:"), "History for logs only should contain 'Recent Logs:' header.");
+  assertTrue(history.includes(`${logDate1.toLocaleDateString()}: Test Action 1 - Details for log 1...`), "Should include log 1 with details and truncation indicator.");
+  assertTrue(history.includes(`${logDate2.toLocaleDateString()}: Test Action 2 - Details for log 2...`), "Should include log 2 with details and truncation indicator.");
+  assertFalse(history.includes("Last Email in Thread"), "History for logs only should NOT contain 'Last Email in Thread' header.");
 
   teardownTestMocks();
 }
@@ -378,29 +437,45 @@ function test_getLeadInteractionHistory_GmailOnly() {
   setupTestMocks();
   const leadId = "LID_GmailOnly"; const email = "gmailonly@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+  const leadId = "LID_GmailOnly"; const email = "gmailonly@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
     ["Lead ID", "Email", "First Name", "Status"], [leadId, email, "GmailOnlyLead", "Contacted"]
   ]);
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LOGS_SHEET_NAME, [
-    ["Timestamp", "Lead ID", "Action", "Details"]
+    ["Timestamp", "Lead ID", "Action", "Details"] // Only headers
   ]);
+  
+  const emailDate1 = new Date(2023,2,2);
+  const emailDate2 = new Date(2023,2,1);
+  const emailBody1 = "Reply from prospect.";
+  const emailBody2 = "My email to them.";
+
   MockGmailApp._addMockThread({
       messages: [
-          { body: "Reply from prospect.", date: new Date(2023,2,2), from: email },
-          { body: "My email to them.", date: new Date(2023,2,1), from: "me@example.com" }
+          { body: emailBody1, date: emailDate1, from: email },
+          { body: emailBody2, date: emailDate2, from: "me@example.com" }
       ],
+      queryMatcher: (q) => q.includes(email)
       queryMatcher: (q) => q.includes(email)
   });
   
   const history = getLeadInteractionHistory(leadId, email);
+  const history = getLeadInteractionHistory(leadId, email);
   
   assertNotNull(history, "History should not be null");
-  assertTrue(history.includes("Reply from prospect."), "Should include Gmail snippet");
-  assertTrue(history.includes("My email to them."), "Should include second Gmail snippet");
-  const logsSectionPresent = history.includes("Recent Logs:");
-  const noLogsMessagePresent = history.includes("No specific logs found for this Lead ID.");
-  assertTrue(!logsSectionPresent || noLogsMessagePresent, "Should not list detailed logs or indicate none found.");
+  assertFalse(history.includes("Recent Logs:"), "History for Gmail only should NOT contain 'Recent Logs:' header.");
+  assertTrue(history.includes("Last Email in Thread (up to 2 most recent):"), "History for Gmail only should contain 'Last Email in Thread' header.");
+  
+  const expectedSnippet1 = emailBody1.substring(0,100) + "...";
+  const expectedSnippet2 = emailBody2.substring(0,100) + "...";
+
+  const expectedFormattedEmail1 = `  - Date: ${emailDate1.toLocaleDateString()}, From: ${email}\n    Snippet: "${expectedSnippet1}"`;
+  const expectedFormattedEmail2 = `  - Date: ${emailDate2.toLocaleDateString()}, From: me@example.com\n    Snippet: "${expectedSnippet2}"`;
+  
+  assertTrue(history.includes(expectedFormattedEmail1), "Should include formatted Gmail snippet 1. Actual: \n" + history);
+  assertTrue(history.includes(expectedFormattedEmail2), "Should include formatted Gmail snippet 2. Actual: \n" + history);
   
   teardownTestMocks();
 }
@@ -410,41 +485,64 @@ function test_getLeadInteractionHistory_FullHistory() {
   setupTestMocks();
   const leadId = "LID_FullHistory"; const email = "fullhistory@example.com";
   const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+  const leadId = "LID_FullHistory"; const email = "fullhistory@example.com";
+  const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
     ["Lead ID", "Email", "First Name", "Status"], [leadId, email, "FullHistoryLead", STATUS.HOT]
   ]);
+  
+  const logDate1 = new Date(2023, 3, 1);
+  const logDate2 = new Date(2023, 3, 2);
+  const logDate3 = new Date(2023, 3, 3);
+  const logDetail1Text = "Detail A " + "long detail ".repeat(10);
+
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LOGS_SHEET_NAME, [
     ["Timestamp", "Lead ID", "Action", "Details"],
-    [new Date(2023, 3, 1).toISOString(), leadId, "Log Action 1", "Detail A " + "long detail ".repeat(10)],
-    [new Date(2023, 3, 2).toISOString(), leadId, "Log Action 2", "Detail B"],
-    [new Date(2023, 3, 3).toISOString(), leadId, "Log Action 3", "Detail C"],
-    [new Date(2023, 3, 4).toISOString(), leadId, "Log Action 4", "Detail D (should not appear)"]
+    [logDate1.toISOString(), leadId, "Log Action 1", logDetail1Text],
+    [logDate2.toISOString(), leadId, "Log Action 2", "Detail B"],
+    [logDate3.toISOString(), leadId, "Log Action 3", "Detail C"],
+    [new Date(2023, 3, 4).toISOString(), leadId, "Log Action 4", "Detail D (should not appear)"] // This one should be excluded by the 3-log limit
   ]);
+  
+  const emailDate1 = new Date(2023,3,5);
+  const emailDate2 = new Date(2023,3,4);
+  const emailBody1Text = "Latest email from prospect " + "long body ".repeat(10);
+  const emailBody2Text = "My previous email to them.";
+
   MockGmailApp._addMockThread({
     messages: [
-        { body: "Latest email from prospect " + "long body ".repeat(10), date: new Date(2023,3,5), from: email },
-        { body: "My previous email to them.", date: new Date(2023,3,4), from: "me@example.com" },
-        { body: "Even earlier email (should not appear).", date: new Date(2023,3,3), from: email }
+        { body: emailBody1Text, date: emailDate1, from: email },
+        { body: emailBody2Text, date: emailDate2, from: "me@example.com" },
+        { body: "Even earlier email (should not appear).", date: new Date(2023,3,3), from: email } // Excluded by 2-email limit
     ],
+    queryMatcher: (q) => q.includes(email)
     queryMatcher: (q) => q.includes(email)
   });
   
   const history = getLeadInteractionHistory(leadId, email); 
+  const history = getLeadInteractionHistory(leadId, email); 
   
   assertNotNull(history, "History should not be null");
-  assertTrue(history.includes("Log Action 1"), "Should include log 1");
-  assertTrue(history.includes("Log Action 3"), "Should include log 3");
-  assertTrue(!history.includes("Log Action 4"), "Should NOT include log 4 (limit 3 logs in function)");
-  assertTrue(history.includes("Latest email from prospect"), "Should include first Gmail snippet");
-  assertTrue(history.includes("My previous email to them"), "Should include second Gmail snippet");
-  assertTrue(!history.includes("Even earlier email"), "Should NOT include third Gmail snippet (limit 2 emails in function)");
   
-  const expectedLogDetail = ("Detail A " + "long detail ".repeat(10)).substring(0,70) + "...";
-  assertTrue(history.includes(expectedLogDetail), "Log detail should be truncated. Expected: ..." + expectedLogDetail.slice(-20));
+  // Check Logs
+  assertTrue(history.includes("Recent Logs:"), "Full history should contain 'Recent Logs:' header.");
+  assertTrue(history.includes(`${logDate1.toLocaleDateString()}: Log Action 1 - ${logDetail1Text.substring(0,70)}...`), "Should include log 1 (truncated).");
+  assertTrue(history.includes(`${logDate3.toLocaleDateString()}: Log Action 3 - Detail C...`), "Should include log 3.");
+  assertTrue(!history.includes("Log Action 4"), "Should NOT include log 4 (due to limit of 3 logs).");
   
-  const expectedGmailBody = ("Latest email from prospect " + "long body ".repeat(10)).substring(0,100) + "...";
-  assertTrue(history.includes(expectedGmailBody), "Gmail body should be truncated. Expected: ..." + expectedGmailBody.slice(-20));
+  // Check Emails
+  assertTrue(history.includes("Last Email in Thread (up to 2 most recent):"), "Full history should contain 'Last Email in Thread' header.");
+  
+  const expectedGmailSnippet1 = emailBody1Text.substring(0,100) + "...";
+  const expectedGmailSnippet2 = emailBody2Text.substring(0,100) + "...";
+  
+  const expectedFormattedEmail1 = `  - Date: ${emailDate1.toLocaleDateString()}, From: ${email}\n    Snippet: "${expectedGmailSnippet1}"`;
+  const expectedFormattedEmail2 = `  - Date: ${emailDate2.toLocaleDateString()}, From: me@example.com\n    Snippet: "${expectedGmailSnippet2}"`;
+
+  assertTrue(history.includes(expectedFormattedEmail1), "Should include formatted & truncated Gmail snippet 1. Actual:\n" + history);
+  assertTrue(history.includes(expectedFormattedEmail2), "Should include formatted & truncated Gmail snippet 2. Actual:\n" + history);
+  assertTrue(!history.includes("Even earlier email"), "Should NOT include third Gmail snippet (due to limit of 2 emails).");
 
   teardownTestMocks();
 }
@@ -453,6 +551,13 @@ function test_processReplies_UsesHistoryForAIClassification() {
     Logger.log("\nRunning test_processReplies_UsesHistoryForAIClassification...");
     setupTestMocks();
 
+    const leadId = "LID_ProcessHistory"; const leadEmail = "processhistory@example.com"; const leadFirstName = "ProcessHist";
+    const mockReplyBody = "Yes, I'm interested. Tell me more.";
+    const interactionHistorySummaryTestString = "Test interaction history: Previously discussed X, Y, Z.";
+    const MAX_HISTORY_LENGTH_FOR_TEST = 2000; 
+    const testSpreadsheetId = CONFIG.SPREADSHEET_ID;
+    const serviceName = "Specific Service";
+    const mockCalendlyLink = "https://calendly.com/specific-service-test";
     const leadId = "LID_ProcessHistory"; const leadEmail = "processhistory@example.com"; const leadFirstName = "ProcessHist";
     const mockReplyBody = "Yes, I'm interested. Tell me more.";
     const interactionHistorySummaryTestString = "Test interaction history: Previously discussed X, Y, Z.";
@@ -479,23 +584,31 @@ function test_processReplies_UsesHistoryForAIClassification() {
     MockGmailApp._addMockThread({
         messages: [{ body: mockReplyBody, from: leadEmail, date: new Date(), isUnread: true }],
         queryMatcher: (q) => q.includes("is:unread") 
+        queryMatcher: (q) => q.includes("is:unread") 
     });
      MockGmailApp._addMockThread({ 
         messages: [{ body: mockReplyBody, from: leadEmail, date: new Date() }],
+        queryMatcher: (q) => q.includes(leadEmail)
         queryMatcher: (q) => q.includes(leadEmail)
     });
 
 
     let receivedHistoryForClassification = null; let receivedHistoryForFollowUp = null;
     let sendEmailCalledArgs = null; let sendPRAlertCalledArgs = null;
+    let receivedHistoryForClassification = null; let receivedHistoryForFollowUp = null;
+    let sendEmailCalledArgs = null; let sendPRAlertCalledArgs = null;
 
+    const mockGetLeadInteractionHistory = mockFunction(this, 'getLeadInteractionHistory', (id, emailArg) => {
     const mockGetLeadInteractionHistory = mockFunction(this, 'getLeadInteractionHistory', (id, emailArg) => {
         return interactionHistorySummaryTestString; 
     });
     const mockClassifyProspectReply = mockFunction(this, 'classifyProspectReply', (reply, name, history) => {
+    const mockClassifyProspectReply = mockFunction(this, 'classifyProspectReply', (reply, name, history) => {
         receivedHistoryForClassification = history; 
         return { identified_services: [serviceName], key_concerns: ["Concern A"], summary_of_need: "Needs Specific Service", sentiment: "positive", classification_confidence: 0.9 };
     });
+    const mockRawAIBody = "This is the raw AI body.\nIt might have single newlines.";
+    const mockGenerateAIContextualFollowUp = mockFunction(this, 'generateAIContextualFollowUp', (classifiedData, name, yourName, serviceProfile, history) => {
     const mockRawAIBody = "This is the raw AI body.\nIt might have single newlines.";
     const mockGenerateAIContextualFollowUp = mockFunction(this, 'generateAIContextualFollowUp', (classifiedData, name, yourName, serviceProfile, history) => {
         receivedHistoryForFollowUp = history; 
@@ -504,14 +617,20 @@ function test_processReplies_UsesHistoryForAIClassification() {
     
     // Capture the arguments to sendEmail
     const mockSendEmail = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
+    const mockSendEmail = mockFunction(this, 'sendEmail', (to, subject, body, id) => {
       if (to === leadEmail) { // Only capture emails sent to the prospect for this test
         sendEmailCalledArgs = {to,subject,body,id};
       }
       return true; 
     });
     const mockSendPRAlert = mockFunction(this, 'sendPRAlert', (fn, svc, em, ph, type, id) => { sendPRAlertCalledArgs = {fn, svc, em, ph, type, id}; });
+    const mockSendPRAlert = mockFunction(this, 'sendPRAlert', (fn, svc, em, ph, type, id) => { sendPRAlertCalledArgs = {fn, svc, em, ph, type, id}; });
     
     // Use REAL formatPlainTextEmailBody and truncateString for this test, assuming they are in Utilities.js
+    const originalFormatEmailBody = this.formatPlainTextEmailBody; // Store original if it's global
+    const originalTruncateString = this.truncateString;
+    this.formatPlainTextEmailBody = (typeof formatPlainTextEmailBody === 'function') ? formatPlainTextEmailBody : (raw) => raw.replace(/\n/g, '\n\n'); // Fallback if not global
+    this.truncateString = (typeof truncateString === 'function') ? truncateString : (str) => str;
     const originalFormatEmailBody = this.formatPlainTextEmailBody; // Store original if it's global
     const originalTruncateString = this.truncateString;
     this.formatPlainTextEmailBody = (typeof formatPlainTextEmailBody === 'function') ? formatPlainTextEmailBody : (raw) => raw.replace(/\n/g, '\n\n'); // Fallback if not global
@@ -526,12 +645,16 @@ function test_processReplies_UsesHistoryForAIClassification() {
     }
 
     const truncatedExpectedHistory = this.truncateString(interactionHistorySummaryTestString, MAX_HISTORY_LENGTH_FOR_TEST, " [History truncated]");
+    const truncatedExpectedHistory = this.truncateString(interactionHistorySummaryTestString, MAX_HISTORY_LENGTH_FOR_TEST, " [History truncated]");
     assertEqual(receivedHistoryForClassification, truncatedExpectedHistory, "classifyProspectReply should receive the (potentially truncated) history string.");
     assertEqual(receivedHistoryForFollowUp, truncatedExpectedHistory, "generateAIContextualFollowUp should receive the (potentially truncated) history string.");
     
     assertNotNull(sendEmailCalledArgs, "sendEmail should have been called for the prospect.");
     if(sendEmailCalledArgs) {
       assertEqual(sendEmailCalledArgs.to, leadEmail, "sendEmail TO address check");
+      const expectedFormattedAIBody = formatPlainTextEmailBody(mockRawAIBody);
+      const expectedCalendlySentence = "Here’s the link to book a meeting: " + mockCalendlyLink;
+      const expectedFullBody = expectedFormattedAIBody + "\n\n" + expectedCalendlySentence + "\n\n" + CONFIG.EMAIL_FOOTER;
       const expectedFormattedAIBody = formatPlainTextEmailBody(mockRawAIBody);
       const expectedCalendlySentence = "Here’s the link to book a meeting: " + mockCalendlyLink;
       const expectedFullBody = expectedFormattedAIBody + "\n\n" + expectedCalendlySentence + "\n\n" + CONFIG.EMAIL_FOOTER;
@@ -542,6 +665,7 @@ function test_processReplies_UsesHistoryForAIClassification() {
     assertNotNull(sendPRAlertCalledArgs, "sendPRAlert should have been called.");
     if(sendPRAlertCalledArgs) assertEqual(sendPRAlertCalledArgs.em, leadEmail, "sendPRAlert email check");
 
+    const lastSetValue = MockSpreadsheetApp._getLastSetValue(testSpreadsheetId, LEADS_SHEET_NAME);
     const lastSetValue = MockSpreadsheetApp._getLastSetValue(testSpreadsheetId, LEADS_SHEET_NAME);
     assertNotNull(lastSetValue, "Sheet status should have been updated");
     if (lastSetValue) assertEqual(lastSetValue.value, STATUS.HOT, "Lead status should be updated to HOT");
@@ -812,7 +936,6 @@ function test_processReplies_negativeSentimentToUnqualified() {
 // logAction is assumed to be globally available from Utilities.js (with its fallback).
 // LEADS_SHEET_NAME, LOGS_SHEET_NAME, CONFIG, STATUS are expected to be global (setupTestMocks provides defaults).I've overwritten `TestFramework.js` with a new version that includes the requested test functions for the "memory" feature.
 
-/*
 **Key changes and implementation details:**
 
 1.  **Assertion Helpers Added**: `assertEqual`, `assertNotNull`, and `assertTrue` were added to the top of the file. They log to `Logger` and also use `console.error` for failures to ensure visibility in different execution contexts.
@@ -854,4 +977,3 @@ function test_processReplies_negativeSentimentToUnqualified() {
     *   **Teardown**: Restores all mocked global functions and calls `teardownTestMocks()`.
 
 This revised `TestFramework.js` should now correctly test the "memory" features by adapting to the established mocking patterns and ensuring proper setup/teardown for each test. The global functions from other project files are mocked by assigning to `this.functionName` within the test or setup, and `mockFunction` handles storing/restoring them.
-*/
