@@ -166,25 +166,37 @@ function getLeadInteractionHistory(leadId, email) {
             historySummary += "Recent Logs: (Error: Log sheet columns missing)\n";
             logAction('GetLeadHistory_LogsSheetError', leadId, email, 'Required column missing in Logs sheet. Headers: ' + logHeaders.join(', '), 'WARNING');
           } else {
-            let relevantLogs = [];
-            // Iterate from the end of the logs for most recent entries
-            for (let i = logValues.length - 1; i >= 1; i--) { 
+            let allLeadLogs = [];
+            // Iterate through all logs to find those matching the leadId
+            for (let i = 1; i < logValues.length; i++) { // Start from 1 to skip header
               if (logValues[i][logLeadIdCol] === leadId) {
-                relevantLogs.push({
+                allLeadLogs.push({
                   action: logValues[i][logActionCol],
-                  details: logValues[i][logDetailsCol] ? String(logValues[i][logDetailsCol]).substring(0, 70) : '', // Truncate details
-                  timestamp: new Date(logValues[i][logTimestampCol]).toLocaleDateString() // Format timestamp
+                  details: logValues[i][logDetailsCol] ? String(logValues[i][logDetailsCol]) : '', // Store full details for now
+                  timestamp: new Date(logValues[i][logTimestampCol]) // Store as Date object for sorting
                 });
-                if (relevantLogs.length >= 3) break; // Limit to last 3 relevant logs
               }
             }
-            if (relevantLogs.length > 0) {
+
+            // Sort all found logs by timestamp in ascending order (oldest first) to easily pick off recent ones
+            allLeadLogs.sort((a, b) => a.timestamp - b.timestamp);
+
+            // Take the last 3 logs (which are the most recent ones)
+            // If fewer than 3, slice will handle it correctly.
+            const recentLogs = allLeadLogs.slice(-3);
+
+            // These are already in chronological order (oldest of the three, to most recent of the three)
+            // No need to reverse again if we sorted ascending and took from the end.
+
+            if (recentLogs.length > 0) {
               historySummary += "Recent Logs:\n";
-              relevantLogs.reverse().forEach(log => { // Reverse to show oldest first in this selection
-                historySummary += `  - ${log.timestamp}: ${log.action} - ${log.details}...\n`;
+              recentLogs.forEach(log => {
+                const formattedTimestamp = log.timestamp.toLocaleDateString(); // Format timestamp for display
+                const truncatedDetails = String(log.details).substring(0, 70); // Truncate details for display
+                historySummary += `  - ${formattedTimestamp}: ${log.action} - ${truncatedDetails}...\n`;
               });
-            } 
-            // If relevantLogs.length is 0, no "Recent Logs" header or "no logs" message is added.
+            }
+            // If recentLogsToDisplay.length is 0, no "Recent Logs" header or "no logs" message is added.
           }
         } else {
            // Log sheet is empty or only headers, do not add "Recent Logs" section or related messages.
@@ -195,7 +207,7 @@ function getLeadInteractionHistory(leadId, email) {
         logAction('GetLeadHistory_LogsSheetError', leadId, email, `Logs sheet '${LOGS_SHEET_NAME}' not found.`, 'WARNING');
         // Optionally, add a warning to the summary if this is considered critical for AI context,
         // but per requirements, we are keeping sections clean if empty.
-        // historySummary += "(Warning: Logs sheet not found, log history may be incomplete.)\n"; 
+        // historySummary += "(Warning: Logs sheet not found, log history may be incomplete.)\n";
       }
     } catch (e) {
       logAction('GetLeadHistory_LogsSheetError', leadId, email, `Error accessing Logs sheet: ${e.message}`, 'WARNING');

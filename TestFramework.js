@@ -169,7 +169,8 @@ var MockGmailApp = {
       getPlainBody: () => m.body || "",
       getFrom: () => m.from || "",
       getDate: () => m.date || new Date(),
-      isUnread: () => m.isUnread !== undefined ? m.isUnread : true
+      isUnread: () => m.isUnread !== undefined ? m.isUnread : true,
+      getSubject: () => m.subject || "" // Added getSubject
     }));
     this._threads.push({
       getMessages: () => mockMessages,
@@ -491,10 +492,10 @@ function test_getLeadInteractionHistory_FullHistory() {
   const emailBody2Text = "My previous email to them.";
 
   MockGmailApp._addMockThread({
-    messages: [
-      { body: emailBody1Text, date: emailDate1, from: email },
-      { body: emailBody2Text, date: emailDate2, from: "me@example.com" },
-      { body: "Even earlier email (should not appear).", date: new Date(2023, 3, 3), from: email }
+    messages: [ // Oldest to Newest
+      { body: "Even earlier email (should not appear).", date: new Date(2023, 3, 3), from: email, subject: "Sub3" },
+      { body: emailBody2Text, date: emailDate2, from: "me@example.com", subject: "Sub2" },
+      { body: emailBody1Text, date: emailDate1, from: email, subject: "Sub1" }
     ],
     queryMatcher: (q) => q.includes(email)
   });
@@ -503,9 +504,9 @@ function test_getLeadInteractionHistory_FullHistory() {
 
   assertNotNull(history, "History should not be null");
   assertTrue(history.includes("Recent Logs:"), "Full history should contain 'Recent Logs:' header.");
-  assertTrue(history.includes(`${logDate1.toLocaleDateString()}: Log Action 1 - ${logDetail1Text.substring(0, 70)}...`), "Should include log 1 (truncated).");
+  assertTrue(history.includes(`${logDate2.toLocaleDateString()}: Log Action 2 - Detail B...`), "Should include log 2 (oldest of the 3 most recent).");
   assertTrue(history.includes(`${logDate3.toLocaleDateString()}: Log Action 3 - Detail C...`), "Should include log 3.");
-  assertFalse(history.includes("Log Action 4"), "Should NOT include log 4 (due to limit of 3 logs).");
+  assertTrue(history.includes(`${new Date(2023, 3, 4).toLocaleDateString()}: Log Action 4 - Detail D (should not appear)...`), "Should include log 4 (most recent of the 3).");
 
   assertTrue(history.includes("Last Email in Thread (up to 2 most recent):"), "Full history should contain 'Last Email in Thread' header.");
   const expectedGmailSnippet1 = emailBody1Text.substring(0, 100) + "...";
@@ -519,6 +520,16 @@ function test_getLeadInteractionHistory_FullHistory() {
 
   teardownTestMocks();
 }
+
+// Helper function for processReplies tests to check status
+function assertLeadStatus(spreadsheetId, sheetName, leadRow, expectedStatus, message) {
+    const leadsSheetMock = MockSpreadsheetApp.getSheetByName(sheetName);
+    const headers = leadsSheetMock.getDataRange().getValues()[0];
+    const statusColIdx = headers.indexOf("Status") + 1; // 1-based index
+    const updatedStatus = leadsSheetMock.getRange(leadRow, statusColIdx).getValue();
+    assertEqual(updatedStatus, expectedStatus, message);
+}
+
 
 function test_processReplies_UsesHistoryForAIClassification() {
   Logger.log("\nRunning test_processReplies_UsesHistoryForAIClassification...");
@@ -543,17 +554,17 @@ function test_processReplies_UsesHistoryForAIClassification() {
   CONFIG.EMAIL_FOOTER = CONFIG.EMAIL_FOOTER || "Reply STOP to unsubscribe";
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
-    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone"],
-    [leadId, leadEmail, leadFirstName, STATUS.SENT, "Initial Service", "123456789"]
+    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone", "Last Contact"],
+    [leadId, leadEmail, leadFirstName, STATUS.SENT, "Initial Service", "123456789", "2023-01-10"]
   ]);
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
 
   MockGmailApp._addMockThread({
-    messages: [{ body: mockReplyBody, from: leadEmail, date: new Date(), isUnread: true }],
+    messages: [{ body: mockReplyBody, subject: "Re: Your Proposal", from: leadEmail, date: new Date(), isUnread: true }],
     queryMatcher: (q) => q.includes("is:unread")
   });
   MockGmailApp._addMockThread({
-    messages: [{ body: mockReplyBody, from: leadEmail, date: new Date() }],
+    messages: [{ body: mockReplyBody, subject: "Re: Your Proposal", from: leadEmail, date: new Date() }],
     queryMatcher: (q) => q.includes(leadEmail)
   });
 
@@ -645,12 +656,12 @@ function test_processReplies_lowConfidenceToManualReview() {
   CONFIG.PR_EMAIL = "pr_test@example.com";
 
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LEADS_SHEET_NAME, [
-    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone"],
-    [leadId, leadEmail, leadFirstName, STATUS.SENT, "Some Service", "123"]
+    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone", "Last Contact"],
+    [leadId, leadEmail, leadFirstName, STATUS.SENT, "Some Service", "123", "2023-01-10"]
   ]);
   MockSpreadsheetApp._setSheetData(testSpreadsheetId, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
   MockGmailApp._addMockThread({ 
-    messages: [{ body: mockReplyBody, from: leadEmail, isUnread: true }], 
+    messages: [{ body: mockReplyBody, subject: "Unsure", from: leadEmail, isUnread: true }],
     queryMatcher: (q) => q.includes("is:unread") 
   });
 
@@ -704,12 +715,12 @@ function test_processReplies_neutralGenericToManualReview() {
   CONFIG.PR_EMAIL = "pr_test_ng@example.com";
 
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
-    ["Lead ID", "Email", "First Name", "Status"], 
-    [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone", "Last Contact"],
+    [leadId, leadEmail, leadFirstName, STATUS.SENT, "General", "555-1234", "2023-01-10"]
   ]);
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
   MockGmailApp._addMockThread({ 
-    messages: [{ body: "Ok.", from: leadEmail, isUnread: true }], 
+    messages: [{ body: "Ok.", subject: "Re: Info", from: leadEmail, isUnread: true }],
     queryMatcher: (q) => q.includes("is:unread") 
   });
 
@@ -753,12 +764,12 @@ function test_processReplies_positiveGenericToManualReview() {
   CONFIG.PR_EMAIL = "pr_test_pg@example.com";
 
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
-    ["Lead ID", "Email", "First Name", "Status"], 
-    [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone", "Last Contact"],
+    [leadId, leadEmail, leadFirstName, STATUS.SENT, "General", "555-1234", "2023-01-10"]
   ]);
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
   MockGmailApp._addMockThread({ 
-    messages: [{ body: "Sounds good!", from: leadEmail, isUnread: true }], 
+    messages: [{ body: "Sounds good!", subject: "Re: Your email", from: leadEmail, isUnread: true }],
     queryMatcher: (q) => q.includes("is:unread") 
   });
 
@@ -801,12 +812,12 @@ function test_processReplies_aiGenerationFailureToManualReview() {
   CONFIG.PR_EMAIL = "pr_test_aifail@example.com";
 
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
-    ["Lead ID", "Email", "First Name", "Status"], 
-    [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone", "Last Contact"],
+    [leadId, leadEmail, leadFirstName, STATUS.SENT, "General", "555-1234", "2023-01-10"]
   ]);
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
   MockGmailApp._addMockThread({ 
-    messages: [{ body: "Interesting proposal!", from: leadEmail, isUnread: true }], 
+    messages: [{ body: "Interesting proposal!", subject: "My thoughts", from: leadEmail, isUnread: true }],
     queryMatcher: (q) => q.includes("is:unread") 
   });
 
@@ -849,12 +860,12 @@ function test_processReplies_negativeSentimentToUnqualified() {
   CONFIG.PR_EMAIL = "pr_test_neg@example.com";
 
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LEADS_SHEET_NAME, [
-    ["Lead ID", "Email", "First Name", "Status"], 
-    [leadId, leadEmail, leadFirstName, STATUS.SENT]
+    ["Lead ID", "Email", "First Name", "Status", "Last Service", "Phone", "Last Contact"],
+    [leadId, leadEmail, leadFirstName, STATUS.SENT, "General", "555-1234", "2023-01-10"]
   ]);
   MockSpreadsheetApp._setSheetData(CONFIG.SPREADSHEET_ID, LOGS_SHEET_NAME, [["Timestamp", "Lead ID", "Action", "Details"]]);
   MockGmailApp._addMockThread({ 
-    messages: [{ body: "Not interested at all.", from: leadEmail, isUnread: true }], 
+    messages: [{ body: "Not interested at all.", subject: "Stop contacting me", from: leadEmail, isUnread: true }],
     queryMatcher: (q) => q.includes("is:unread") 
   });
 
